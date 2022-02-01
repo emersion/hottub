@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 
 	"git.sr.ht/~emersion/gqlclient"
@@ -14,16 +13,12 @@ type SrhtClient struct {
 	Endpoint string
 }
 
-func createSrhtClient() *SrhtClient {
+func createSrhtClient(installation *Installation) *SrhtClient {
 	endpoint := os.Getenv("SRHT_ENDPOINT")
 	if endpoint == "" {
 		endpoint = "https://builds.sr.ht"
 	}
-	token := os.Getenv("SRHT_TOKEN")
-	if token == "" {
-		log.Fatalf("missing SRHT_TOKEN")
-	}
-	tokenSrc := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+	tokenSrc := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: installation.SrhtToken})
 	httpClient := oauth2.NewClient(context.Background(), tokenSrc)
 	return &SrhtClient{
 		GQL:      gqlclient.New(endpoint+"/query", httpClient),

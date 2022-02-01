@@ -275,3 +275,12 @@ func FetchJob(client *gqlclient.Client, ctx context.Context, id int32) (job *Job
 	err = client.Execute(ctx, op, &respData)
 	return respData.Job, err
 }
+
+func FetchUser(client *gqlclient.Client, ctx context.Context) (me *User, err error) {
+	op := gqlclient.NewOperation("query fetchUser {\n\tme {\n\t\tcanonicalName\n\t}\n}\n")
+	var respData struct {
+		Me *User
+	}
+	err = client.Execute(ctx, op, &respData)
+	return respData.Me, err
+}

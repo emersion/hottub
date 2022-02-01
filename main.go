@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi"
@@ -21,13 +23,79 @@ const monitorJobInterval = 5 * time.Second
 func main() {
 	atr := createAppsTransport()
 	webhookSecret := []byte(os.Getenv("GITHUB_WEBHOOK_SECRET"))
-	srht := createSrhtClient()
+	db := createDB("hottub.db")
+
+	agh := github.NewClient(&http.Client{Transport: atr})
+	app, _, err := agh.Apps.Get(context.Background(), "")
+	if err != nil {
+		log.Fatalf("failed to fetch app: %v", err)
+	}
+
+	tpl := template.Must(template.ParseGlob("templates/*.html"))
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.Timeout(60 * time.Second))
+
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		if err := tpl.ExecuteTemplate(w, "index.html", app); err != nil {
+			panic(err)
+		}
+	})
+
+	r.HandleFunc("/post-install", func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.URL.Query().Get("installation_id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid installation_id", http.StatusBadRequest)
+			return
+		}
+
+		installation, err := db.GetInstallation(id)
+		if err != nil && err != ErrNotFound {
+			log.Printf("failed to get installation: %v", err)
+			http.Error(w, "failed to get installation", http.StatusInternalServerError)
+			return
+		}
+
+		if token := r.FormValue("srht_token"); installation != nil && token != "" {
+			// TODO: a sr.ht user could potentially "steal" a GitHub
+			// installation belonging to someone else, by guessing the
+			// installation ID before the user has the chance to submit the
+			// sr.ht token
+
+			installation.SrhtToken = token
+			srht := createSrhtClient(installation)
+			user, err := buildssrht.FetchUser(srht.GQL, r.Context())
+			if err != nil {
+				log.Printf("failed to fetch sr.ht user: %v", err)
+				http.Error(w, "invalid sr.ht token", http.StatusBadRequest)
+				return
+			}
+
+			if err := db.StoreInstallation(installation); err != nil {
+				log.Printf("failed to store installation: %v", err)
+				http.Error(w, "failed to store installation", http.StatusInternalServerError)
+				return
+			}
+
+			log.Printf("user %v has completed installation %v", user.CanonicalName, installation.ID)
+		}
+
+		data := struct {
+			Pending    bool
+			Done       bool
+			SrhtGrants string
+		}{
+			Pending:    installation == nil,
+			Done:       installation != nil && installation.SrhtToken != "",
+			SrhtGrants: "builds.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW",
+		}
+		if err := tpl.ExecuteTemplate(w, "post-install.html", &data); err != nil {
+			panic(err)
+		}
 	})
 
 	r.Post("/webhook", func(w http.ResponseWriter, r *http.Request) {
@@ -46,17 +114,37 @@ func main() {
 		}
 
 		switch event := event.(type) {
+		case *github.InstallationEvent:
+			log.Printf("installation %v by %v", event.GetAction(), event.Sender.GetLogin())
+			switch event.GetAction() {
+			case "created":
+				err = db.StoreInstallation(&Installation{
+					ID: *event.Installation.ID,
+				})
+			case "deleted":
+				err = db.DeleteInstallation(*event.Installation.ID)
+			}
 		case *github.CheckSuiteEvent:
 			gh := newInstallationClient(atr, event.Installation)
-			if *event.Action == "requested" || *event.Action == "rerequested" {
-				if err := startCheckSuite(r.Context(), gh, srht, event); err != nil {
-					log.Printf("failed to start check suite: %v", err)
-					http.Error(w, "failed to start check suite", http.StatusInternalServerError)
-					return
-				}
+
+			var installation *Installation
+			installation, err = db.GetInstallation(*event.Installation.ID)
+			if err != nil {
+				break
+			}
+			srht := createSrhtClient(installation)
+
+			switch event.GetAction() {
+			case "requested", "rerequested":
+				err = startCheckSuite(r.Context(), gh, srht, event)
 			}
 		default:
 			log.Printf("unhandled event type: %T", event)
+		}
+
+		if err != nil {
+			log.Printf("failed to handle event %T: %v", event, err)
+			http.Error(w, "failed to handle event", http.StatusInternalServerError)
 		}
 	})
 

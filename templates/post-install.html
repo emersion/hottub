@@ -1,0 +1,27 @@
+{{ template "head.html" }}
+
+<main>
+
+<h1>hottub installation</h1>
+
+{{ if .Pending }}
+	<p>Installation in progress...</p>
+	<meta http-equiv="refresh" content="5">
+{{ else if .Done }}
+	<p>Installation complete!</p>
+{{ else }}
+	<p>
+		Please complete the installation:
+		<a href="https://meta.sr.ht/oauth2/personal-token?grants={{ .SrhtGrants }}" target="_blank">generate a sr.ht OAuth2 token</a>
+		and copy-paste it below.
+	</p>
+
+	<form action="" method="POST">
+		<input type="password" name="srht_token" placeholder="sr.ht token">
+		<button>Complete installation</button>
+	</form>
+{{ end }}
+
+</main>
+
+{{ template "foot.html" }}

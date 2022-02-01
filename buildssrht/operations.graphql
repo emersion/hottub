@@ -12,3 +12,9 @@ query fetchJob($id: Int!) {
         status
     }
 }
+
+query fetchUser {
+    me {
+        canonicalName
+    }
+}
