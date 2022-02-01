@@ -6,8 +6,10 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi"
@@ -164,6 +166,35 @@ func startCheckSuite(ctx context.Context, gh *github.Client, srht *SrhtClient, e
 		return err
 	} else if manifest == nil {
 		return nil
+	}
+
+	sourcesIface, ok := manifest["sources"]
+	if ok {
+		cloneURL, err := url.Parse(*event.Repo.CloneURL)
+		if err != nil {
+			return fmt.Errorf("failed to parse GitHub clone URL: %v", err)
+		}
+
+		manifestCloneURL := *cloneURL
+		manifestCloneURL.Fragment = *event.CheckSuite.HeadSHA
+
+		sources, ok := sourcesIface.([]interface{})
+		if !ok {
+			return fmt.Errorf("invalid manifest: `sources` is not a list")
+		}
+
+		for i, srcIface := range sources {
+			src, ok := srcIface.(string)
+			if !ok {
+				return fmt.Errorf("invalid manifest: `sources` contains a %T, want a string", srcIface)
+			}
+
+			// TODO: use Repo.Parent to figure out whether we should replace
+			// the source
+			if strings.HasSuffix(src, "/"+repoName) || strings.HasSuffix(src, "/"+repoName+".git") {
+				sources[i] = manifestCloneURL.String()
+			}
+		}
 	}
 
 	manifestBuf, err := yaml.Marshal(manifest)
