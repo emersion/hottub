@@ -67,7 +67,7 @@ func main() {
 			return
 		}
 
-		if token := r.FormValue("srht_token"); installation != nil && token != "" {
+		if token := r.FormValue("srht_token"); installation != nil && token != "" && installation.SrhtToken == "" {
 			// TODO: a sr.ht user could potentially "steal" a GitHub
 			// installation belonging to someone else, by guessing the
 			// installation ID before the user has the chance to submit the
