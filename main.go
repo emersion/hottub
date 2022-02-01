@@ -41,7 +41,12 @@ func main() {
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		if err := tpl.ExecuteTemplate(w, "index.html", app); err != nil {
+		data := struct {
+			App *github.App
+		}{
+			App: app,
+		}
+		if err := tpl.ExecuteTemplate(w, "index.html", &data); err != nil {
 			panic(err)
 		}
 	})
