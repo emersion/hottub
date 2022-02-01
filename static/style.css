@@ -6,3 +6,16 @@ main {
 	max-width: 800px;
 	margin: 0 auto;
 }
+
+.install {
+	text-align: center;
+	margin: 75px 0;
+}
+.install a {
+	display: inline-block;
+	text-decoration: none;
+	color: white;
+	background-color: #0070ff;
+	padding: 15px;
+	border-radius: 5px;
+}
