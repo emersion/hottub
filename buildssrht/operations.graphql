@@ -1,0 +1,14 @@
+mutation submitJob($manifest: String!) {
+    submit(manifest: $manifest, secrets: false) {
+        id
+        owner {
+            canonicalName
+        }
+    }
+}
+
+query fetchJob($id: Int!) {
+    job(id: $id) {
+        status
+    }
+}

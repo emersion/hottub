@@ -1,0 +1,344 @@
+# This schema definition is available in the public domain, or under the terms
+# of CC-0, at your choice.
+scalar Time   # %Y-%m-%dT%H:%M:%SZ
+scalar Binary # base64'd string
+scalar Cursor
+scalar File
+
+"Used to provide a human-friendly description of an access scope"
+directive @scopehelp(details: String!) on ENUM_VALUE
+
+enum AccessScope {
+  PROFILE @scopehelp(details: "profile information")
+  JOBS    @scopehelp(details: "build jobs")
+  LOGS    @scopehelp(details: "build logs")
+  SECRETS @scopehelp(details: "stored secrets")
+}
+
+enum AccessKind {
+  RO @scopehelp(details: "read")
+  RW @scopehelp(details: "read and write")
+}
+
+"""
+Decorates fields for which access requires a particular OAuth 2.0 scope with
+read or write access.
+"""
+directive @access(scope: AccessScope!, kind: AccessKind!) on FIELD_DEFINITION
+
+"""
+This used to decorate private resolvers which are only accessible to build
+workers, and are used to faciliate the build process.
+"""
+directive @worker on FIELD_DEFINITION
+
+# https://semver.org
+type Version {
+  major: Int!
+  minor: Int!
+  patch: Int!
+
+  """
+  If this API version is scheduled for deprecation, this is the date on which
+  it will stop working; or null if this API version is not scheduled for
+  deprecation.
+  """
+  deprecationDate: Time
+
+  # Config settings
+  settings: Settings!
+}
+
+# Instance specific settings
+type Settings {
+  sshUser: String!
+  buildTimeout: String!
+}
+
+interface Entity {
+  id: Int!
+  created: Time!
+  updated: Time!
+  """
+  The canonical name of this entity. For users, this is their username
+  prefixed with '~'. Additional entity types will be supported in the future.
+  """
+  canonicalName: String!
+}
+
+type User implements Entity {
+  id: Int!
+  created: Time!
+  updated: Time!
+  canonicalName: String!
+  username: String!
+  email: String!
+  url: String
+  location: String
+  bio: String
+
+  "Jobs submitted by this user."
+  jobs(cursor: Cursor): JobCursor! @access(scope: JOBS, kind: RO)
+}
+
+enum JobStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  TIMEOUT
+  CANCELLED
+}
+
+type Job {
+  id: Int!
+  created: Time!
+  updated: Time!
+  status: JobStatus!
+  manifest: String!
+  note: String
+  tags: [String]!
+
+  "Name of the build image"
+  image: String!
+
+  """
+  Name of the build runner which picked up this job, or null if the job is
+  pending or queued.
+  """
+  runner: String
+
+  owner: Entity! @access(scope: PROFILE, kind: RO)
+  group: JobGroup
+  tasks: [Task]!
+  artifacts: [Artifact]!
+
+  "The job's top-level log file, not associated with any tasks"
+  log: Log @access(scope: LOGS, kind: RO)
+
+  "List of secrets available to this job, or null if they were disabled"
+  secrets: [Secret] @access(scope: SECRETS, kind: RO)
+}
+
+type Log {
+  "The most recently written 128 KiB of the build log."
+  last128KiB: String!
+  """
+  The URL at which the full build log can be downloaded with a GET request
+  (text/plain).
+  """
+  fullURL: String!
+}
+
+type Artifact {
+  id: Int!
+  created: Time!
+  "Original path in the guest"
+  path: String!
+  "Size in bytes"
+  size: Int!
+  "URL at which the artifact may be downloaded, or null if pruned"
+  url: String
+}
+
+"""
+A cursor for enumerating a list of jobs
+
+If there are additional results available, the cursor object may be passed
+back into the same endpoint to retrieve another page. If the cursor is null,
+there are no remaining results to return.
+"""
+type JobCursor {
+  results: [Job!]!
+  cursor: Cursor
+}
+
+type JobGroup {
+  id: Int!
+  created: Time!
+  note: String
+  owner: Entity! @access(scope: PROFILE, kind: RO)
+  jobs: [Job]!
+  triggers: [Trigger]!
+}
+
+enum TaskStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+type Task {
+  id: Int!
+  created: Time!
+  updated: Time!
+  name: String!
+  status: TaskStatus!
+  log: Log @access(scope: LOGS, kind: RO)
+  job: Job!
+}
+
+enum TriggerCondition {
+  SUCCESS
+  FAILURE
+  ALWAYS
+}
+
+"""
+Triggers run upon the completion of all of the jobs in a job group. Note that
+these triggers are distinct from the ones defined by an individual job's
+build manifest, but are similar in functionality.
+"""
+interface Trigger {
+  condition: TriggerCondition!
+}
+
+type EmailTrigger implements Trigger {
+  condition: TriggerCondition!
+  to: String!
+  cc: String
+  inReplyTo: String
+}
+
+type WebhookTrigger implements Trigger {
+  condition: TriggerCondition!
+  url: String!
+}
+
+interface Secret {
+  id: Int!
+  created: Time!
+  uuid: String!
+  name: String
+}
+
+"""
+A cursor for enumerating a list of secrets
+
+If there are additional results available, the cursor object may be passed
+back into the same endpoint to retrieve another page. If the cursor is null,
+there are no remaining results to return.
+"""
+type SecretCursor {
+  results: [Secret!]!
+  cursor: Cursor
+}
+
+type SSHKey implements Secret {
+  id: Int!
+  created: Time!
+  uuid: String!
+  name: String
+  privateKey: Binary! @worker
+}
+
+type PGPKey implements Secret {
+  id: Int!
+  created: Time!
+  uuid: String!
+  name: String
+  privateKey: Binary! @worker
+}
+
+type SecretFile implements Secret {
+  id: Int!
+  created: Time!
+  uuid: String!
+  name: String
+  path: String!
+  mode: Int!
+  data: Binary! @worker
+}
+
+type Query {
+  "Returns API version information."
+  version: Version!
+
+  "Returns the authenticated user."
+  me: User! @access(scope: PROFILE, kind: RO)
+
+  "Returns a specific user."
+  userByID(id: Int!): User @access(scope: PROFILE, kind: RO)
+  userByName(username: String!): User @access(scope: PROFILE, kind: RO)
+
+  "Returns jobs submitted by the authenticated user."
+  jobs(cursor: Cursor): JobCursor! @access(scope: JOBS, kind: RO)
+
+  "Returns information about a specific job."
+  job(id: Int!): Job @access(scope: JOBS, kind: RO)
+
+  "Returns secrets owned by the authenticated user."
+  secrets(cursor: Cursor): SecretCursor! @access(scope: SECRETS, kind: RO)
+}
+
+enum TriggerType {
+  EMAIL
+  WEBHOOK
+}
+
+input EmailTriggerInput {
+  to: String!
+  cc: String
+  inReplyTo: String
+}
+
+input WebhookTriggerInput {
+  url: String!
+}
+
+input TriggerInput {
+  type: TriggerType!
+  condition: TriggerCondition!
+  email: EmailTriggerInput
+  webhook: WebhookTriggerInput
+}
+
+type Mutation {
+  """
+  Submits a new job to the queue.
+
+  'secrets' may be set to false to disable secrets for this build. Secrets
+  are enabled if unspecified.
+
+  'execute' may be set to false to defer queueing this job. Builds are
+  executed immediately if unspecified.
+  """
+  submit(manifest: String!, tags: [String!] note: String, secrets: Boolean,
+    execute: Boolean): Job! @access(scope: JOBS, kind: RW)
+
+  "Queues a pending job."
+  start(jobID: Int!): Job @access(scope: JOBS, kind: RW)
+
+  "Cancels a submitted job."
+  cancel(jobId: Int!): Job @access(scope: JOBS, kind: RW)
+
+  """
+  Creates a job group from several pending jobs.
+
+  'execute' may be set to false to defer queueing this job. The job group is
+  executed immediately if unspecified.
+  """
+  createGroup(jobIds: [Int!]!  triggers: [TriggerInput!],
+    execute: Boolean, note: String): JobGroup! @access(scope: JOBS, kind: RW)
+
+  "Starts a pending job group."
+  startGroup(groupId: Int!): JobGroup @access(scope: JOBS, kind: RW)
+
+  ###
+  ### The following resolvers are for internal worker use
+
+  "Claims a job."
+  claim(jobId: Int!): Job @worker
+
+  "Updates job status."
+  updateJob(jobId: Int!, status: JobStatus!): Job @worker
+
+  "Updates task status."
+  updateTask(taskId: Int!, status: TaskStatus!): Job @worker
+
+  "Uploads a build artifact."
+  createArtifact(jobId: Int!, path: String!, contents: File!): Artifact @worker
+}
