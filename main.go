@@ -128,7 +128,8 @@ func main() {
 			switch event.GetAction() {
 			case "created":
 				err = db.StoreInstallation(&Installation{
-					ID: *event.Installation.ID,
+					ID:    *event.Installation.ID,
+					Owner: event.Sender.GetLogin(),
 				})
 			case "deleted":
 				err = db.DeleteInstallation(*event.Installation.ID)

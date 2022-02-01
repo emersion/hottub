@@ -15,6 +15,7 @@ var ErrNotFound = fmt.Errorf("resource not found in DB")
 
 type Installation struct {
 	ID        int64  `json:"-"`
+	Owner     string `json:"owner"`
 	SrhtToken string `json:"srht_token,omitempty"`
 }
 
