@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"go.etcd.io/bbolt"
 )
@@ -14,9 +15,10 @@ var installationsBucket = []byte("installations")
 var ErrNotFound = fmt.Errorf("resource not found in DB")
 
 type Installation struct {
-	ID        int64  `json:"-"`
-	Owner     string `json:"owner"`
-	SrhtToken string `json:"srht_token,omitempty"`
+	ID        int64     `json:"-"`
+	Owner     string    `json:"owner"`
+	CreatedAt time.Time `json:"created_at"`
+	SrhtToken string    `json:"srht_token,omitempty"`
 }
 
 type DB struct {
