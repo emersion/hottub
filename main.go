@@ -202,7 +202,26 @@ func startCheckSuite(ctx context.Context, gh *github.Client, srht *SrhtClient, e
 		return fmt.Errorf("failed to marshal manifest: %v", err)
 	}
 
-	job, err := buildssrht.SubmitJob(srht.GQL, ctx, string(manifestBuf))
+	tags := []string{repoName}
+	if len(event.CheckSuite.PullRequests) > 1 {
+		tags = append(tags, "pulls")
+	} else if len(event.CheckSuite.PullRequests) == 1 {
+		tags = append(tags, "pulls", fmt.Sprintf("%v", *event.CheckSuite.PullRequests[0].Number))
+	} else if event.CheckSuite.HeadBranch != nil {
+		tags = append(tags, "commits", *event.CheckSuite.HeadBranch)
+	}
+
+	commit := event.CheckSuite.HeadCommit
+	title := strings.SplitN(*commit.Message, "\n", 2)[0]
+	shortHash := (*event.CheckSuite.HeadSHA)[0:10]
+	commitURL := strings.ReplaceAll(*event.Repo.CommitsURL, "{/sha}", *event.CheckSuite.HeadSHA)
+	note := fmt.Sprintf(`%v
+
+[%v] — %v
+
+[%v]: %v`, title, shortHash, *commit.Author.Name, shortHash, commitURL)
+
+	job, err := buildssrht.SubmitJob(srht.GQL, ctx, string(manifestBuf), tags, &note)
 	if err != nil {
 		return fmt.Errorf("failed to submit sr.ht job: %v", err)
 	}

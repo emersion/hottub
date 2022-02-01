@@ -1,5 +1,5 @@
-mutation submitJob($manifest: String!) {
-    submit(manifest: $manifest, secrets: false) {
+mutation submitJob($manifest: String!, $tags: [String!], $note: String) {
+    submit(manifest: $manifest, secrets: false, tags: $tags, note: $note) {
         id
         owner {
             canonicalName
