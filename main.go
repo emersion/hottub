@@ -92,13 +92,15 @@ func main() {
 		}
 
 		data := struct {
-			Pending    bool
-			Done       bool
-			SrhtGrants string
+			Pending        bool
+			Done           bool
+			SrhtGrants     string
+			InstallationID int64
 		}{
-			Pending:    installation == nil,
-			Done:       installation != nil && installation.SrhtToken != "",
-			SrhtGrants: "builds.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW",
+			Pending:        installation == nil,
+			Done:           installation != nil && installation.SrhtToken != "",
+			SrhtGrants:     "builds.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW",
+			InstallationID: id,
 		}
 		if err := tpl.ExecuteTemplate(w, "post-install.html", &data); err != nil {
 			panic(err)
