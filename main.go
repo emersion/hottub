@@ -155,7 +155,9 @@ func main() {
 		}
 	})
 
-	log.Fatal(http.ListenAndServe(":3333", r))
+	addr := ":3333"
+	log.Printf("Server listening on %v", addr)
+	log.Fatal(http.ListenAndServe(addr, r))
 }
 
 func startCheckSuite(ctx context.Context, gh *github.Client, srht *SrhtClient, event *github.CheckSuiteEvent) error {
