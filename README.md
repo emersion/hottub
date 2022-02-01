@@ -2,6 +2,8 @@
 
 A CI bridge from GitHub to SourceHut.
 
+A [public instance] is available.
+
 ## Building
 
     go build
@@ -22,3 +24,4 @@ AGPLv3, see LICENSE.
 Copyright (C) 2022 Simon Ser
 
 [GitHub guide]: https://docs.github.com/en/developers/apps/guides/creating-ci-tests-with-the-checks-api
+[public instance]: https://hottub.emersion.fr/
