@@ -25,10 +25,11 @@ import (
 const monitorJobInterval = 5 * time.Second
 
 func main() {
-	var addr, appID, privateKeyFilename, webhookSecret, srhtEndpoint string
+	var addr, dbFilename, appID, privateKeyFilename, webhookSecret, srhtEndpoint string
 	flag.StringVar(&addr, "listen", ":3333", "listening address")
+	flag.StringVar(&dbFilename, "db", "hottub.db", "database path")
 	flag.StringVar(&appID, "gh-app-id", "", "GitHub app ID")
-	flag.StringVar(&privateKeyFilename, "gh-private-key", "", "GitHub app private key")
+	flag.StringVar(&privateKeyFilename, "gh-private-key", "", "GitHub app private key path")
 	flag.StringVar(&webhookSecret, "gh-webhook-secret", "", "GitHub webhook secret")
 	flag.StringVar(&srhtEndpoint, "buildssrht-endpoint", "https://builds.sr.ht", "builds.sr.ht endpoint")
 	flag.Parse()
@@ -48,7 +49,7 @@ func main() {
 	}
 
 	atr := createAppsTransport(appID, privateKeyFilename)
-	db := createDB("hottub.db")
+	db := createDB(dbFilename)
 
 	agh := github.NewClient(&http.Client{Transport: atr})
 	app, _, err := agh.Apps.Get(context.Background(), "")
