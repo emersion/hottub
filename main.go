@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"html/template"
 	"log"
@@ -24,8 +25,28 @@ import (
 const monitorJobInterval = 5 * time.Second
 
 func main() {
-	atr := createAppsTransport()
-	webhookSecret := []byte(os.Getenv("GITHUB_WEBHOOK_SECRET"))
+	var appID, privateKeyFilename, webhookSecret, srhtEndpoint string
+	flag.StringVar(&appID, "gh-app-id", "", "GitHub app ID")
+	flag.StringVar(&privateKeyFilename, "gh-private-key", "", "GitHub app private key")
+	flag.StringVar(&webhookSecret, "gh-webhook-secret", "", "GitHub webhook secret")
+	flag.StringVar(&srhtEndpoint, "buildssrht-endpoint", "https://builds.sr.ht", "builds.sr.ht endpoint")
+	flag.Parse()
+
+	if appID == "" {
+		appID = os.Getenv("GITHUB_APP_IDENTIFIER")
+	}
+	if privateKeyFilename == "" {
+		privateKeyFilename = os.Getenv("GITHUB_PRIVATE_KEY")
+	}
+	if webhookSecret == "" {
+		webhookSecret = os.Getenv("GITHUB_WEBHOOK_SECRET")
+	}
+
+	if appID == "" || privateKeyFilename == "" {
+		log.Fatal("missing -gh-app-id or -gh-private-key")
+	}
+
+	atr := createAppsTransport(appID, privateKeyFilename)
 	db := createDB("hottub.db")
 
 	agh := github.NewClient(&http.Client{Transport: atr})
@@ -75,7 +96,7 @@ func main() {
 			// sr.ht token
 
 			installation.SrhtToken = token
-			srht := createSrhtClient(installation)
+			srht := createSrhtClient(srhtEndpoint, installation)
 			user, err := buildssrht.FetchUser(srht.GQL, r.Context())
 			if err != nil {
 				log.Printf("failed to fetch sr.ht user: %v", err)
@@ -109,7 +130,7 @@ func main() {
 	})
 
 	r.Post("/webhook", func(w http.ResponseWriter, r *http.Request) {
-		payload, err := github.ValidatePayload(r, webhookSecret)
+		payload, err := github.ValidatePayload(r, []byte(webhookSecret))
 		if err != nil {
 			log.Printf("failed to validate webhook payload: %v", err)
 			http.Error(w, "failed to validate webhook paload", http.StatusBadRequest)
@@ -144,7 +165,7 @@ func main() {
 			if err != nil {
 				break
 			}
-			srht := createSrhtClient(installation)
+			srht := createSrhtClient(srhtEndpoint, installation)
 
 			switch event.GetAction() {
 			case "requested", "rerequested":

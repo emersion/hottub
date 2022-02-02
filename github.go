@@ -3,21 +3,16 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v42/github"
 )
 
-func createAppsTransport() *ghinstallation.AppsTransport {
-	appID, err := strconv.ParseInt(os.Getenv("GITHUB_APP_IDENTIFIER"), 10, 64)
+func createAppsTransport(appIDStr, privateKeyFilename string) *ghinstallation.AppsTransport {
+	appID, err := strconv.ParseInt(appIDStr, 10, 64)
 	if err != nil {
-		log.Fatalf("invalid GITHUB_APP_IDENTIFIER: %v", err)
-	}
-	privateKeyFilename := os.Getenv("GITHUB_PRIVATE_KEY")
-	if privateKeyFilename == "" {
-		log.Fatalf("missing GITHUB_PRIVATE_KEY")
+		log.Fatalf("invalid app ID: %v", err)
 	}
 	atr, err := ghinstallation.NewAppsTransportKeyFromFile(http.DefaultTransport, appID, privateKeyFilename)
 	if err != nil {

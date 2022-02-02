@@ -11,11 +11,13 @@ A [public instance] is available.
 ## Installation
 
 1. Follow the [GitHub guide] to register an app suitable for the Checks API.
-2. Export the GitHub app ID as `GITHUB_APP_IDENTIFIER`.
-3. Export the path to the PEM private key as `GITHUB_PRIVATE_KEY`.
-4. Export the webhook secret as `GITHUB_WEBHOOK_SECRET` (optional for local
-   development).
-5. Start hottub.
+2. Set the GitHub app setup URL to `https://<domain>/post-install` and the
+   webhook URL to `https://<domain>/webhook`.
+2. Grab the GitHub app ID and webhook secret (optional for local development).
+   Download a new PEM private key.
+5. Start hottub:
+
+       hottub -gh-app-id <id> -gh-private-key <path> -gh-webhook-secret <secret>
 
 ## License
 
