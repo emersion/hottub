@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -165,10 +166,31 @@ func main() {
 }
 
 func startCheckSuite(ctx context.Context, gh *github.Client, srht *SrhtClient, event *github.CheckSuiteEvent) error {
+	filenames, err := listManifestCandidates(ctx, gh, *event.Repo.Owner.Login, *event.Repo.Name, *event.CheckSuite.HeadSHA)
+	if err != nil {
+		return err
+	}
+
+	for _, filename := range filenames {
+		if err := startJob(ctx, gh, srht, event, filename); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func startJob(ctx context.Context, gh *github.Client, srht *SrhtClient, event *github.CheckSuiteEvent, filename string) error {
 	repoOwner, repoName := *event.Repo.Owner.Login, *event.Repo.Name
 	ref := *event.CheckSuite.HeadSHA
 
-	manifest, err := fetchManifest(ctx, gh, repoOwner, repoName, ref)
+	basename := path.Base(filename)
+	name := strings.TrimSuffix(basename, path.Ext(basename))
+	if filename == ".build.yml" {
+		name = ""
+	}
+
+	manifest, err := fetchManifest(ctx, gh, repoOwner, repoName, ref, filename)
 	if err != nil {
 		return err
 	} else if manifest == nil {
@@ -217,6 +239,9 @@ func startCheckSuite(ctx context.Context, gh *github.Client, srht *SrhtClient, e
 	} else if event.CheckSuite.HeadBranch != nil {
 		tags = append(tags, "commits", *event.CheckSuite.HeadBranch)
 	}
+	if name != "" {
+		tags = append(tags, name)
+	}
 
 	commit := event.CheckSuite.HeadCommit
 	title := strings.SplitN(*commit.Message, "\n", 2)[0]
@@ -235,6 +260,9 @@ func startCheckSuite(ctx context.Context, gh *github.Client, srht *SrhtClient, e
 
 	detailsURL := fmt.Sprintf("%v/%v/job/%v", srht.Endpoint, job.Owner.CanonicalName, job.Id)
 	statusContext := "builds.sr.ht"
+	if name != "" {
+		statusContext += "/" + name
+	}
 	repoStatus := &github.RepoStatus{TargetURL: &detailsURL, Context: &statusContext}
 	err = updateRepoStatus(ctx, gh, repoOwner, repoName, ref, repoStatus, "pending", "build started…")
 	if err != nil {
@@ -311,27 +339,49 @@ func updateRepoStatus(ctx context.Context, gh *github.Client, repoOwner, repoNam
 	return err
 }
 
-func fetchManifest(ctx context.Context, gh *github.Client, repoOwner, repoName, ref string) (map[string]interface{}, error) {
-	f, _, resp, err := gh.Repositories.GetContents(ctx, repoOwner, repoName, ".build.yml", &github.RepositoryContentGetOptions{
+func listManifestCandidates(ctx context.Context, gh *github.Client, repoOwner, repoName, ref string) ([]string, error) {
+	_, entries, resp, err := gh.Repositories.GetContents(ctx, repoOwner, repoName, ".builds", &github.RepositoryContentGetOptions{
+		Ref: ref,
+	})
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return []string{".build.yml"}, nil
+		}
+		return nil, fmt.Errorf("failed to list files in .builds: %v", err)
+	}
+
+	var candidates []string
+	for _, entry := range entries {
+		if *entry.Type != "file" || !strings.HasSuffix(*entry.Name, ".yml") {
+			continue
+		}
+		candidates = append(candidates, *entry.Path)
+	}
+
+	return candidates, nil
+}
+
+func fetchManifest(ctx context.Context, gh *github.Client, repoOwner, repoName, ref, filename string) (map[string]interface{}, error) {
+	f, _, resp, err := gh.Repositories.GetContents(ctx, repoOwner, repoName, filename, &github.RepositoryContentGetOptions{
 		Ref: ref,
 	})
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to download .build.yml: %v", err)
+		return nil, fmt.Errorf("failed to download %q: %v", filename, err)
 	} else if f == nil {
-		return nil, fmt.Errorf(".build.yml isn't a file")
+		return nil, fmt.Errorf("%v isn't a file", filename)
 	}
 
 	body, err := f.GetContent()
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode file contents: %v", err)
+		return nil, fmt.Errorf("failed to decode contents of %v: %v", filename, err)
 	}
 
 	var manifest map[string]interface{}
 	if err := yaml.Unmarshal([]byte(body), &manifest); err != nil {
-		return nil, fmt.Errorf("failed to parse manifest: %v", err)
+		return nil, fmt.Errorf("failed to parse manifest at %v: %v", filename, err)
 	}
 
 	return manifest, nil
