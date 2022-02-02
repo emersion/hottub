@@ -147,6 +147,8 @@ func main() {
 		}
 
 		switch event := event.(type) {
+		case *github.PingEvent:
+			log.Printf("received ping (%v)", *event.Zen)
 		case *github.InstallationEvent:
 			log.Printf("installation %v by %v", event.GetAction(), event.Sender.GetLogin())
 			switch event.GetAction() {
