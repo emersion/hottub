@@ -268,7 +268,7 @@ func startJob(ctx context.Context, gh *github.Client, srht *SrhtClient, event *g
 	commit := event.CheckSuite.HeadCommit
 	title := strings.SplitN(*commit.Message, "\n", 2)[0]
 	shortHash := (*event.CheckSuite.HeadSHA)[0:10]
-	commitURL := strings.ReplaceAll(*event.Repo.CommitsURL, "{/sha}", *event.CheckSuite.HeadSHA)
+	commitURL := *event.Repo.HTMLURL + "/commit/" + *event.CheckSuite.HeadSHA
 	note := fmt.Sprintf(`%v
 
 [%v] — %v
