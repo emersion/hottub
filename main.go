@@ -166,8 +166,9 @@ func main() {
 
 func startCheckSuite(ctx context.Context, gh *github.Client, srht *SrhtClient, event *github.CheckSuiteEvent) error {
 	repoOwner, repoName := *event.Repo.Owner.Login, *event.Repo.Name
+	ref := *event.CheckSuite.HeadSHA
 
-	manifest, err := fetchManifest(ctx, gh, repoOwner, repoName, *event.CheckSuite.HeadSHA)
+	manifest, err := fetchManifest(ctx, gh, repoOwner, repoName, ref)
 	if err != nil {
 		return err
 	} else if manifest == nil {
@@ -182,7 +183,7 @@ func startCheckSuite(ctx context.Context, gh *github.Client, srht *SrhtClient, e
 		}
 
 		manifestCloneURL := *cloneURL
-		manifestCloneURL.Fragment = *event.CheckSuite.HeadSHA
+		manifestCloneURL.Fragment = ref
 
 		sources, ok := sourcesIface.([]interface{})
 		if !ok {
@@ -233,30 +234,26 @@ func startCheckSuite(ctx context.Context, gh *github.Client, srht *SrhtClient, e
 	}
 
 	detailsURL := fmt.Sprintf("%v/%v/job/%v", srht.Endpoint, job.Owner.CanonicalName, job.Id)
-	externalID := fmt.Sprintf("%v", job.Id)
-	checkRun, _, err := gh.Checks.CreateCheckRun(ctx, repoOwner, repoName, github.CreateCheckRunOptions{
-		Name:       "builds.sr.ht",
-		HeadSHA:    *event.CheckSuite.HeadSHA,
-		DetailsURL: &detailsURL,
-		ExternalID: &externalID,
-	})
+	statusContext := "builds.sr.ht"
+	repoStatus := &github.RepoStatus{TargetURL: &detailsURL, Context: &statusContext}
+	err = updateRepoStatus(ctx, gh, repoOwner, repoName, ref, repoStatus, "pending", "build started…")
 	if err != nil {
-		return fmt.Errorf("failed to create check run: %v", err)
+		return fmt.Errorf("failed to create commit status: %v", err)
 	}
 
 	go func() {
 		ctx := context.TODO()
 
-		if err := monitorJob(ctx, gh, srht, repoOwner, repoName, checkRun, job); err != nil {
+		if err := monitorJob(ctx, gh, srht, repoOwner, repoName, ref, repoStatus, job); err != nil {
 			log.Printf("failed to monitor sr.ht job #%d: %v", job.Id, err)
-			updateCheckRun(ctx, gh, repoOwner, repoName, checkRun, "completed", "failure")
+			updateRepoStatus(ctx, gh, repoOwner, repoName, ref, repoStatus, "failure", "internal error")
 		}
 	}()
 
 	return nil
 }
 
-func monitorJob(ctx context.Context, gh *github.Client, srht *SrhtClient, repoOwner, repoName string, checkRun *github.CheckRun, job *buildssrht.Job) error {
+func monitorJob(ctx context.Context, gh *github.Client, srht *SrhtClient, repoOwner, repoName, ref string, repoStatus *github.RepoStatus, job *buildssrht.Job) error {
 	prevStatus := buildssrht.JobStatusPending
 	for {
 		time.Sleep(monitorJobInterval)
@@ -270,8 +267,8 @@ func monitorJob(ctx context.Context, gh *github.Client, srht *SrhtClient, repoOw
 			continue
 		}
 
-		status, conclusion := jobStatusToGitHub(job.Status)
-		updateCheckRun(ctx, gh, repoOwner, repoName, checkRun, status, conclusion)
+		state, description := jobStatusToGitHub(job.Status)
+		updateRepoStatus(ctx, gh, repoOwner, repoName, ref, repoStatus, state, description)
 
 		switch job.Status {
 		case buildssrht.JobStatusPending, buildssrht.JobStatusQueued, buildssrht.JobStatusRunning:
@@ -282,35 +279,35 @@ func monitorJob(ctx context.Context, gh *github.Client, srht *SrhtClient, repoOw
 	}
 }
 
-func jobStatusToGitHub(jobStatus buildssrht.JobStatus) (status, conclusion string) {
+func jobStatusToGitHub(jobStatus buildssrht.JobStatus) (state, description string) {
 	switch jobStatus {
-	case buildssrht.JobStatusPending, buildssrht.JobStatusQueued:
-		return "queued", ""
+	case buildssrht.JobStatusPending:
+		return "pending", "job pending…"
+	case buildssrht.JobStatusQueued:
+		return "pending", "job queued…"
 	case buildssrht.JobStatusRunning:
-		return "in_progress", ""
+		return "pending", "job running…"
 	case buildssrht.JobStatusSuccess:
-		return "completed", "success"
+		return "success", "job completed"
 	case buildssrht.JobStatusFailed:
-		return "completed", "failure"
+		return "error", "job failed"
 	case buildssrht.JobStatusTimeout:
-		return "completed", "timed_out"
+		return "failure", "job timed out"
 	case buildssrht.JobStatusCancelled:
-		return "completed", "cancelled"
+		return "failure", "job cancelled"
 	default:
 		panic(fmt.Sprintf("unknown sr.ht job status: %v", jobStatus))
 	}
 }
 
-func updateCheckRun(ctx context.Context, gh *github.Client, repoOwner, repoName string, checkRun *github.CheckRun, status, conclusion string) error {
-	conclusionPtr := &conclusion
-	if conclusion == "" {
-		conclusionPtr = nil
+func updateRepoStatus(ctx context.Context, gh *github.Client, repoOwner, repoName, ref string, repoStatus *github.RepoStatus, state, description string) error {
+	repoStatus = &github.RepoStatus{
+		TargetURL:   repoStatus.TargetURL,
+		Context:     repoStatus.Context,
+		State:       &state,
+		Description: &description,
 	}
-	_, _, err := gh.Checks.UpdateCheckRun(ctx, repoOwner, repoName, *checkRun.ID, github.UpdateCheckRunOptions{
-		Name:       *checkRun.Name,
-		Status:     &status,
-		Conclusion: conclusionPtr,
-	})
+	_, _, err := gh.Repositories.CreateStatus(ctx, repoOwner, repoName, ref, repoStatus)
 	return err
 }
 
