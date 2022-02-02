@@ -25,7 +25,8 @@ import (
 const monitorJobInterval = 5 * time.Second
 
 func main() {
-	var appID, privateKeyFilename, webhookSecret, srhtEndpoint string
+	var addr, appID, privateKeyFilename, webhookSecret, srhtEndpoint string
+	flag.StringVar(&addr, "listen", ":3333", "listening address")
 	flag.StringVar(&appID, "gh-app-id", "", "GitHub app ID")
 	flag.StringVar(&privateKeyFilename, "gh-private-key", "", "GitHub app private key")
 	flag.StringVar(&webhookSecret, "gh-webhook-secret", "", "GitHub webhook secret")
@@ -181,7 +182,6 @@ func main() {
 		}
 	})
 
-	addr := ":3333"
 	log.Printf("Server listening on %v", addr)
 	log.Fatal(http.ListenAndServe(addr, r))
 }
