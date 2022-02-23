@@ -162,19 +162,67 @@ func main() {
 				err = db.DeleteInstallation(*event.Installation.ID)
 			}
 		case *github.CheckSuiteEvent:
-			gh := newInstallationClient(atr, event.Installation)
+			if *event.Action != "requested" && *event.Action != "rerequested" {
+				break
+			}
 
 			var installation *Installation
 			installation, err = db.GetInstallation(*event.Installation.ID)
 			if err != nil {
 				break
 			}
-			srht := createSrhtClient(srhtEndpoint, installation)
 
-			switch event.GetAction() {
-			case "requested", "rerequested":
-				err = startCheckSuite(r.Context(), gh, srht, event)
+			ctx := &checkSuiteContext{
+				Context:    r.Context(),
+				gh:         newInstallationClient(atr, event.Installation),
+				srht:       createSrhtClient(srhtEndpoint, installation),
+				baseRepo:   event.Repo,
+				headRepo:   event.Repo,
+				headCommit: event.CheckSuite.HeadCommit,
+				headSHA:    event.CheckSuite.GetHeadSHA(),
 			}
+			if len(event.CheckSuite.PullRequests) == 1 {
+				ctx.pullRequest = event.CheckSuite.PullRequests[0]
+			} else if len(event.CheckSuite.PullRequests) == 0 && event.CheckSuite.HeadBranch != nil {
+				ctx.headBranch = *event.CheckSuite.HeadBranch
+			}
+			err = startCheckSuite(ctx)
+		case *github.PullRequestEvent:
+			// GitHub doesn't automatically create a CheckSuiteEvent for pull
+			// requests made from a fork, so we need to manually handle this
+			// case:
+			// https://github.community/t/no-check-suite-event-for-foreign-pull-reuqests/13915/2
+			if *event.Action != "opened" && *event.Action != "reopened" && *event.Action != "synchronize" {
+				break
+			}
+			if event.PullRequest.Head.Repo.GetFullName() == event.PullRequest.Base.Repo.GetFullName() {
+				break
+			}
+
+			var installation *Installation
+			installation, err = db.GetInstallation(*event.Installation.ID)
+			if err != nil {
+				break
+			}
+
+			ctx := &checkSuiteContext{
+				Context:     r.Context(),
+				gh:          newInstallationClient(atr, event.Installation),
+				srht:        createSrhtClient(srhtEndpoint, installation),
+				baseRepo:    event.Repo,
+				headRepo:    event.PullRequest.Head.Repo,
+				headSHA:     event.PullRequest.Head.GetSHA(),
+				pullRequest: event.PullRequest,
+			}
+
+			var repoCommit *github.RepositoryCommit
+			repoCommit, _, err = ctx.gh.Repositories.GetCommit(ctx, ctx.headRepo.Owner.GetLogin(), ctx.headRepo.GetName(), ctx.headSHA, nil)
+			if err != nil {
+				break
+			}
+			ctx.headCommit = repoCommit.Commit
+
+			err = startCheckSuite(ctx)
 		default:
 			log.Printf("unhandled event type: %T", event)
 		}
@@ -189,14 +237,26 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, r))
 }
 
-func startCheckSuite(ctx context.Context, gh *github.Client, srht *SrhtClient, event *github.CheckSuiteEvent) error {
-	filenames, err := listManifestCandidates(ctx, gh, *event.Repo.Owner.Login, *event.Repo.Name, *event.CheckSuite.HeadSHA)
+type checkSuiteContext struct {
+	context.Context
+	gh                 *github.Client
+	srht               *SrhtClient
+	baseRepo, headRepo *github.Repository
+	headSHA            string
+	headCommit         *github.Commit
+
+	pullRequest *github.PullRequest // may be nil
+	headBranch  string              // may be empty
+}
+
+func startCheckSuite(ctx *checkSuiteContext) error {
+	filenames, err := listManifestCandidates(ctx, ctx.gh, ctx.headRepo.Owner.GetLogin(), ctx.headRepo.GetName(), ctx.headSHA)
 	if err != nil {
 		return err
 	}
 
 	for _, filename := range filenames {
-		if err := startJob(ctx, gh, srht, event, filename); err != nil {
+		if err := startJob(ctx, filename); err != nil {
 			return err
 		}
 	}
@@ -204,17 +264,14 @@ func startCheckSuite(ctx context.Context, gh *github.Client, srht *SrhtClient, e
 	return nil
 }
 
-func startJob(ctx context.Context, gh *github.Client, srht *SrhtClient, event *github.CheckSuiteEvent, filename string) error {
-	repoOwner, repoName := *event.Repo.Owner.Login, *event.Repo.Name
-	ref := *event.CheckSuite.HeadSHA
-
+func startJob(ctx *checkSuiteContext, filename string) error {
 	basename := path.Base(filename)
 	name := strings.TrimSuffix(basename, path.Ext(basename))
 	if filename == ".build.yml" {
 		name = ""
 	}
 
-	manifest, err := fetchManifest(ctx, gh, repoOwner, repoName, ref, filename)
+	manifest, err := fetchManifest(ctx, ctx.gh, ctx.headRepo.Owner.GetLogin(), ctx.headRepo.GetName(), ctx.headSHA, filename)
 	if err != nil {
 		return err
 	} else if manifest == nil {
@@ -223,13 +280,13 @@ func startJob(ctx context.Context, gh *github.Client, srht *SrhtClient, event *g
 
 	sourcesIface, ok := manifest["sources"]
 	if ok {
-		cloneURL, err := url.Parse(*event.Repo.CloneURL)
+		cloneURL, err := url.Parse(ctx.headRepo.GetCloneURL())
 		if err != nil {
 			return fmt.Errorf("failed to parse GitHub clone URL: %v", err)
 		}
 
 		manifestCloneURL := *cloneURL
-		manifestCloneURL.Fragment = ref
+		manifestCloneURL.Fragment = ctx.headSHA
 
 		sources, ok := sourcesIface.([]interface{})
 		if !ok {
@@ -244,7 +301,7 @@ func startJob(ctx context.Context, gh *github.Client, srht *SrhtClient, event *g
 
 			// TODO: use Repo.Parent to figure out whether we should replace
 			// the source
-			if strings.HasSuffix(src, "/"+repoName) || strings.HasSuffix(src, "/"+repoName+".git") {
+			if strings.HasSuffix(src, "/"+ctx.headRepo.GetName()) || strings.HasSuffix(src, "/"+ctx.headRepo.GetName()+".git") {
 				sources[i] = manifestCloneURL.String()
 			}
 		}
@@ -255,62 +312,61 @@ func startJob(ctx context.Context, gh *github.Client, srht *SrhtClient, event *g
 		return fmt.Errorf("failed to marshal manifest: %v", err)
 	}
 
-	tags := []string{repoName}
-	if len(event.CheckSuite.PullRequests) > 1 {
-		tags = append(tags, "pulls")
-	} else if len(event.CheckSuite.PullRequests) == 1 {
-		tags = append(tags, "pulls", fmt.Sprintf("%v", *event.CheckSuite.PullRequests[0].Number))
-	} else if event.CheckSuite.HeadBranch != nil {
-		tags = append(tags, "commits", *event.CheckSuite.HeadBranch)
+	tags := []string{ctx.baseRepo.GetName()}
+	if ctx.pullRequest != nil {
+		tags = append(tags, "pulls", fmt.Sprintf("%v", ctx.pullRequest.GetNumber()))
+	} else if ctx.headBranch != "" {
+		tags = append(tags, "commits", ctx.headBranch)
 	}
 	if name != "" {
 		tags = append(tags, name)
 	}
 
-	commit := event.CheckSuite.HeadCommit
-	title := strings.SplitN(*commit.Message, "\n", 2)[0]
-	shortHash := (*event.CheckSuite.HeadSHA)[0:10]
-	commitURL := *event.Repo.HTMLURL + "/commit/" + *event.CheckSuite.HeadSHA
+	commit := ctx.headCommit
+	title := strings.SplitN(commit.GetMessage(), "\n", 2)[0]
+	shortHash := ctx.headSHA[0:10]
+	commitURL := ctx.headRepo.GetHTMLURL() + "/commit/" + ctx.headSHA
 	note := fmt.Sprintf(`%v
 
 [%v] — %v
 
-[%v]: %v`, title, shortHash, *commit.Author.Name, shortHash, commitURL)
+[%v]: %v`, title, shortHash, commit.Author.GetName(), shortHash, commitURL)
 
-	job, err := buildssrht.SubmitJob(srht.GQL, ctx, string(manifestBuf), tags, &note)
+	job, err := buildssrht.SubmitJob(ctx.srht.GQL, ctx, string(manifestBuf), tags, &note)
 	if err != nil {
 		return fmt.Errorf("failed to submit sr.ht job: %v", err)
 	}
 
-	detailsURL := fmt.Sprintf("%v/%v/job/%v", srht.Endpoint, job.Owner.CanonicalName, job.Id)
+	detailsURL := fmt.Sprintf("%v/%v/job/%v", ctx.srht.Endpoint, job.Owner.CanonicalName, job.Id)
 	statusContext := "builds.sr.ht"
 	if name != "" {
 		statusContext += "/" + name
 	}
 	repoStatus := &github.RepoStatus{TargetURL: &detailsURL, Context: &statusContext}
-	err = updateRepoStatus(ctx, gh, repoOwner, repoName, ref, repoStatus, "pending", "build started…")
+	err = updateRepoStatus(ctx, repoStatus, "pending", "build started…")
 	if err != nil {
 		return fmt.Errorf("failed to create commit status: %v", err)
 	}
 
 	go func() {
-		ctx := context.TODO()
+		childCtx := *ctx
+		childCtx.Context = context.TODO()
 
-		if err := monitorJob(ctx, gh, srht, repoOwner, repoName, ref, repoStatus, job); err != nil {
+		if err := monitorJob(&childCtx, repoStatus, job); err != nil {
 			log.Printf("failed to monitor sr.ht job #%d: %v", job.Id, err)
-			updateRepoStatus(ctx, gh, repoOwner, repoName, ref, repoStatus, "failure", "internal error")
+			updateRepoStatus(&childCtx, repoStatus, "failure", "internal error")
 		}
 	}()
 
 	return nil
 }
 
-func monitorJob(ctx context.Context, gh *github.Client, srht *SrhtClient, repoOwner, repoName, ref string, repoStatus *github.RepoStatus, job *buildssrht.Job) error {
+func monitorJob(ctx *checkSuiteContext, repoStatus *github.RepoStatus, job *buildssrht.Job) error {
 	prevStatus := buildssrht.JobStatusPending
 	for {
 		time.Sleep(monitorJobInterval)
 
-		job, err := buildssrht.FetchJob(srht.GQL, ctx, job.Id)
+		job, err := buildssrht.FetchJob(ctx.srht.GQL, ctx, job.Id)
 		if err != nil {
 			return fmt.Errorf("failed to fetch sr.ht job: %v", err)
 		}
@@ -320,7 +376,7 @@ func monitorJob(ctx context.Context, gh *github.Client, srht *SrhtClient, repoOw
 		}
 
 		state, description := jobStatusToGitHub(job.Status)
-		updateRepoStatus(ctx, gh, repoOwner, repoName, ref, repoStatus, state, description)
+		updateRepoStatus(ctx, repoStatus, state, description)
 
 		switch job.Status {
 		case buildssrht.JobStatusPending, buildssrht.JobStatusQueued, buildssrht.JobStatusRunning:
@@ -352,14 +408,14 @@ func jobStatusToGitHub(jobStatus buildssrht.JobStatus) (state, description strin
 	}
 }
 
-func updateRepoStatus(ctx context.Context, gh *github.Client, repoOwner, repoName, ref string, repoStatus *github.RepoStatus, state, description string) error {
+func updateRepoStatus(ctx *checkSuiteContext, repoStatus *github.RepoStatus, state, description string) error {
 	repoStatus = &github.RepoStatus{
 		TargetURL:   repoStatus.TargetURL,
 		Context:     repoStatus.Context,
 		State:       &state,
 		Description: &description,
 	}
-	_, _, err := gh.Repositories.CreateStatus(ctx, repoOwner, repoName, ref, repoStatus)
+	_, _, err := ctx.gh.Repositories.CreateStatus(ctx, ctx.baseRepo.Owner.GetLogin(), ctx.baseRepo.GetName(), ctx.headSHA, repoStatus)
 	return err
 }
 
