@@ -161,6 +161,8 @@ func main() {
 			case "deleted":
 				err = db.DeleteInstallation(*event.Installation.ID)
 			}
+		case *github.InstallationRepositoriesEvent:
+			log.Printf("installation repositories %v by %v (%v added, %v removed)", event.GetAction(), event.Sender.GetLogin(), len(event.RepositoriesAdded), len(event.RepositoriesRemoved))
 		case *github.CheckSuiteEvent:
 			if *event.Action != "requested" && *event.Action != "rerequested" {
 				break
