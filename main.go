@@ -49,6 +49,12 @@ func main() {
 	if webhookSecret == "" {
 		webhookSecret = os.Getenv("GITHUB_WEBHOOK_SECRET")
 	}
+	if srhtClientID == "" {
+		srhtClientID = os.Getenv("SRHT_CLIENT_ID")
+	}
+	if srhtClientSecret == "" {
+		srhtClientSecret = os.Getenv("SRHT_CLIENT_SECRET")
+	}
 
 	if appID == "" || privateKeyFilename == "" {
 		log.Fatal("missing -gh-app-id or -gh-private-key")
