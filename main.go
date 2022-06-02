@@ -22,16 +22,22 @@ import (
 	"git.sr.ht/~emersion/hottub/buildssrht"
 )
 
-const monitorJobInterval = 5 * time.Second
+const (
+	monitorJobInterval = 5 * time.Second
+	srhtGrants         = "builds.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW"
+)
 
 func main() {
-	var addr, dbFilename, appID, privateKeyFilename, webhookSecret, srhtEndpoint string
+	var addr, dbFilename, appID, privateKeyFilename, webhookSecret, buildssrhtEndpoint, metasrhtEndpoint, srhtClientID, srhtClientSecret string
 	flag.StringVar(&addr, "listen", ":3333", "listening address")
 	flag.StringVar(&dbFilename, "db", "hottub.db", "database path")
 	flag.StringVar(&appID, "gh-app-id", "", "GitHub app ID")
 	flag.StringVar(&privateKeyFilename, "gh-private-key", "", "GitHub app private key path")
 	flag.StringVar(&webhookSecret, "gh-webhook-secret", "", "GitHub webhook secret")
-	flag.StringVar(&srhtEndpoint, "buildssrht-endpoint", "https://builds.sr.ht", "builds.sr.ht endpoint")
+	flag.StringVar(&buildssrhtEndpoint, "buildssrht-endpoint", "https://builds.sr.ht", "builds.sr.ht endpoint")
+	flag.StringVar(&metasrhtEndpoint, "metasrht-endpoint", "https://meta.sr.ht", "meta.sr.ht endpoint")
+	flag.StringVar(&srhtClientID, "metasrht-client-id", "", "meta.sr.ht OAuth2 client ID (optional)")
+	flag.StringVar(&srhtClientSecret, "metasrht-client-secret", "", "meta.sr.ht OAuth2 client secret (optional)")
 	flag.Parse()
 
 	if appID == "" {
@@ -46,6 +52,10 @@ func main() {
 
 	if appID == "" || privateKeyFilename == "" {
 		log.Fatal("missing -gh-app-id or -gh-private-key")
+	}
+
+	if _, err := url.Parse(metasrhtEndpoint); err != nil {
+		log.Fatalf("invalid -metasrht-endpoint: %v", err)
 	}
 
 	atr := createAppsTransport(appID, privateKeyFilename)
@@ -77,6 +87,52 @@ func main() {
 		}
 	})
 
+	r.HandleFunc("/authorize-srht", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		state, _ := url.ParseQuery(q.Get("state"))
+		id, err := strconv.ParseInt(state.Get("installation_id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid state query parameter", http.StatusBadRequest)
+			return
+		}
+
+		if errCode := q.Get("error"); errCode != "" {
+			http.Error(w, fmt.Sprintf("sr.ht error: %v", errCode), http.StatusInternalServerError)
+			return
+		}
+
+		code := q.Get("code")
+		if code == "" {
+			http.Error(w, "invalid code query parameter", http.StatusBadRequest)
+			return
+		}
+
+		installation, err := db.GetInstallation(id)
+		if err != nil {
+			log.Printf("failed to get installation: %v", err)
+			http.Error(w, "failed to get installation", http.StatusInternalServerError)
+			return
+		}
+
+		ctx := r.Context()
+		endpoint := metasrhtEndpoint + "/oauth2/access-token"
+		token, err := exchangeSrhtOAuth2(ctx, endpoint, code, srhtClientID, srhtClientSecret)
+		if err != nil {
+			log.Printf("failed to exchange sr.ht code for an OAuth2 token: %v", err)
+			http.Error(w, "failed to perform OAuth2 exchange", http.StatusInternalServerError)
+			return
+		}
+
+		if err := saveSrhtToken(ctx, db, buildssrhtEndpoint, installation, token); err != nil {
+			log.Print(err)
+			http.Error(w, "invalid sr.ht token", http.StatusInternalServerError)
+			return
+		}
+
+		redirect := fmt.Sprintf("/post-install?installation_id=%d", id)
+		http.Redirect(w, r, redirect, http.StatusTemporaryRedirect)
+	})
+
 	r.HandleFunc("/post-install", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.URL.Query().Get("installation_id"), 10, 64)
 		if err != nil {
@@ -97,22 +153,33 @@ func main() {
 			// installation ID before the user has the chance to submit the
 			// sr.ht token
 
-			installation.SrhtToken = token
-			srht := createSrhtClient(srhtEndpoint, installation)
-			user, err := buildssrht.FetchUser(srht.GQL, r.Context())
-			if err != nil {
-				log.Printf("failed to fetch sr.ht user: %v", err)
+			if err := saveSrhtToken(r.Context(), db, buildssrhtEndpoint, installation, token); err != nil {
+				log.Print(err)
 				http.Error(w, "invalid sr.ht token", http.StatusBadRequest)
 				return
 			}
+		}
 
-			if err := db.StoreInstallation(installation); err != nil {
-				log.Printf("failed to store installation: %v", err)
-				http.Error(w, "failed to store installation", http.StatusInternalServerError)
-				return
+		// If we have a sr.ht client setup, redirect to the sr.ht authorization
+		// page
+		if installation != nil && installation.SrhtToken == "" && srhtClientID != "" {
+			u, err := url.Parse(metasrhtEndpoint)
+			if err != nil {
+				panic(err) // we sanity check the URL at initialization time
 			}
+			u.Path = "/oauth2/authorize"
 
-			log.Printf("user %v has completed installation %v", user.CanonicalName, installation.ID)
+			state := make(url.Values)
+			state.Set("installation_id", strconv.FormatInt(id, 10))
+
+			q := u.Query()
+			q.Set("response_type", "code")
+			q.Set("client_id", srhtClientID)
+			q.Set("scope", srhtGrants)
+			q.Set("state", state.Encode())
+
+			http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
+			return
 		}
 
 		data := struct {
@@ -123,7 +190,7 @@ func main() {
 		}{
 			Pending:        installation == nil,
 			Done:           installation != nil && installation.SrhtToken != "",
-			SrhtGrants:     "builds.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW",
+			SrhtGrants:     srhtGrants,
 			InstallationID: id,
 		}
 		if err := tpl.ExecuteTemplate(w, "post-install.html", &data); err != nil {
@@ -177,7 +244,7 @@ func main() {
 			ctx := &checkSuiteContext{
 				Context:    r.Context(),
 				gh:         newInstallationClient(atr, event.Installation),
-				srht:       createSrhtClient(srhtEndpoint, installation),
+				srht:       createSrhtClient(buildssrhtEndpoint, installation),
 				baseRepo:   event.Repo,
 				headRepo:   event.Repo,
 				headCommit: event.CheckSuite.HeadCommit,
@@ -210,7 +277,7 @@ func main() {
 			ctx := &checkSuiteContext{
 				Context:     r.Context(),
 				gh:          newInstallationClient(atr, event.Installation),
-				srht:        createSrhtClient(srhtEndpoint, installation),
+				srht:        createSrhtClient(buildssrhtEndpoint, installation),
 				baseRepo:    event.Repo,
 				headRepo:    event.PullRequest.Head.Repo,
 				headSHA:     event.PullRequest.Head.GetSHA(),

@@ -19,6 +19,10 @@ A [public instance] is available.
 
        hottub -gh-app-id <id> -gh-private-key <path> -gh-webhook-secret <secret>
 
+Optionally, to improve the authorization flow, you can [register an sr.ht
+OAuth2 client] and pass its credentials with `-srht-client-id` and
+`-srht-client-secret`.
+
 ## License
 
 AGPLv3, see LICENSE.
@@ -26,4 +30,5 @@ AGPLv3, see LICENSE.
 Copyright (C) 2022 Simon Ser
 
 [GitHub guide]: https://docs.github.com/en/developers/apps/guides/creating-ci-tests-with-the-checks-api
+[register an sr.ht OAuth2 client]: https://meta.sr.ht/oauth2/client-registration
 [public instance]: https://hottub.emersion.fr/
