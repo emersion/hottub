@@ -27,6 +27,11 @@ const (
 	srhtGrants         = "builds.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW"
 )
 
+var (
+	TemplatesDir = "templates"
+	StaticDir    = "static"
+)
+
 func main() {
 	var addr, dbFilename, appID, privateKeyFilename, webhookSecret, buildssrhtEndpoint, metasrhtEndpoint, srhtClientID, srhtClientSecret string
 	flag.StringVar(&addr, "listen", ":3333", "listening address")
@@ -73,14 +78,14 @@ func main() {
 		log.Fatalf("failed to fetch app: %v", err)
 	}
 
-	tpl := template.Must(template.ParseGlob("templates/*.html"))
+	tpl := template.Must(template.ParseGlob(TemplatesDir + "/*.html"))
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir(StaticDir))))
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		data := struct {
