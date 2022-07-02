@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"git.sr.ht/~emersion/gqlclient"
 	"golang.org/x/oauth2"
@@ -38,7 +39,7 @@ func exchangeSrhtOAuth2(ctx context.Context, endpoint, code, clientID, clientSec
 	if err != nil {
 		return "", err
 	}
-	if t := tok.Type(); t != "bearer" {
+	if t := tok.Type(); !strings.EqualFold(t, "Bearer") {
 		return "", fmt.Errorf("unsupported OAuth2 token type: %v", t)
 	}
 
