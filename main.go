@@ -183,6 +183,7 @@ func main() {
 			q.Set("client_id", srhtClientID)
 			q.Set("scope", srhtGrants)
 			q.Set("state", state.Encode())
+			u.RawQuery = q.Encode()
 
 			http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
 			return
