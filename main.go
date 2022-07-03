@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi"
@@ -314,8 +316,20 @@ func main() {
 		}
 	})
 
+	server := &http.Server{Addr: addr, Handler: r}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		log.Printf("Shutting down server")
+		if err := server.Shutdown(context.Background()); err != nil {
+			log.Fatalf("failed to shutdown server: %v", err)
+		}
+	}()
+
 	log.Printf("Server listening on %v", addr)
-	log.Fatal(http.ListenAndServe(addr, r))
+	log.Fatal(server.ListenAndServe())
 }
 
 type checkSuiteContext struct {
