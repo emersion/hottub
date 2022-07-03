@@ -13,6 +13,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -32,6 +33,11 @@ const (
 var (
 	TemplatesDir = "templates"
 	StaticDir    = "static"
+)
+
+var (
+	monitorContext   context.Context
+	monitorWaitGroup sync.WaitGroup
 )
 
 func main() {
@@ -318,18 +324,29 @@ func main() {
 
 	server := &http.Server{Addr: addr, Handler: r}
 
+	var cancelMonitor context.CancelFunc
+	monitorContext, cancelMonitor = context.WithCancel(context.Background())
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
+
+		cancelMonitor()
+
 		log.Printf("Shutting down server")
 		if err := server.Shutdown(context.Background()); err != nil {
 			log.Fatalf("failed to shutdown server: %v", err)
 		}
+
+		// By this point, no more incoming HTTP requests are handled
+		monitorWaitGroup.Wait()
 	}()
 
 	log.Printf("Server listening on %v", addr)
-	log.Fatal(server.ListenAndServe())
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("failed to listen and serve: %v", err)
+	}
 }
 
 type checkSuiteContext struct {
@@ -443,13 +460,22 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 		return fmt.Errorf("failed to create commit status: %v", err)
 	}
 
+	monitorWaitGroup.Add(1)
 	go func() {
+		defer monitorWaitGroup.Done()
+
 		childCtx := *ctx
-		childCtx.Context = context.TODO()
+		childCtx.Context = monitorContext
 
 		if err := monitorJob(&childCtx, repoStatus, job); err != nil {
 			log.Printf("failed to monitor sr.ht job #%d: %v", job.Id, err)
-			updateRepoStatus(&childCtx, repoStatus, "failure", "internal error")
+
+			failBareCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			failCtx := childCtx
+			failCtx.Context = failBareCtx
+
+			updateRepoStatus(&failCtx, repoStatus, "failure", "internal error")
 		}
 	}()
 
