@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
@@ -26,8 +27,9 @@ import (
 )
 
 const (
-	monitorJobInterval = 5 * time.Second
-	srhtGrants         = "builds.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW"
+	monitorJobInterval   = 5 * time.Second
+	srhtGrants           = "builds.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW"
+	maxJobsPerCheckSuite = 4
 )
 
 var (
@@ -365,6 +367,14 @@ func startCheckSuite(ctx *checkSuiteContext) error {
 	filenames, err := listManifestCandidates(ctx, ctx.gh, ctx.headRepo.Owner.GetLogin(), ctx.headRepo.GetName(), ctx.headSHA)
 	if err != nil {
 		return err
+	}
+
+	// Select a few manifests at random if there are too many
+	if len(filenames) > maxJobsPerCheckSuite {
+		rand.Shuffle(len(filenames), func(i, j int) {
+			filenames[i], filenames[j] = filenames[j], filenames[i]
+		})
+		filenames = filenames[:maxJobsPerCheckSuite]
 	}
 
 	for _, filename := range filenames {
