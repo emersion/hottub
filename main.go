@@ -28,6 +28,7 @@ import (
 
 const (
 	monitorJobInterval   = 5 * time.Second
+	monitorMaxRetries    = 10
 	srhtGrants           = "builds.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW"
 	maxJobsPerCheckSuite = 4
 )
@@ -497,7 +498,18 @@ func monitorJob(ctx *checkSuiteContext, repoStatus *github.RepoStatus, job *buil
 	for {
 		time.Sleep(monitorJobInterval)
 
-		job, err := buildssrht.FetchJob(ctx.srht.GQL, ctx, job.Id)
+		var (
+			job *buildssrht.Job
+			err error
+		)
+		for i := 0; job == nil && i < monitorMaxRetries; i++ {
+			job, err := buildssrht.FetchJob(ctx.srht.GQL, ctx, job.Id)
+			if err != nil {
+				log.Printf("failed to fetch sr.ht job #%v (try %v/%v): %v", job.Id, i+1, monitorMaxRetries, err)
+				job = nil
+				time.Sleep(monitorJobInterval)
+			}
+		}
 		if err != nil {
 			return fmt.Errorf("failed to fetch sr.ht job: %v", err)
 		}
