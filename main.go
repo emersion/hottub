@@ -478,7 +478,7 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 		childCtx := *ctx
 		childCtx.Context = monitorContext
 
-		if err := monitorJob(&childCtx, repoStatus, job); err != nil {
+		if err := monitorJob(&childCtx, repoStatus, job.Id); err != nil {
 			log.Printf("failed to monitor sr.ht job #%d: %v", job.Id, err)
 
 			failBareCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -493,7 +493,7 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 	return nil
 }
 
-func monitorJob(ctx *checkSuiteContext, repoStatus *github.RepoStatus, job *buildssrht.Job) error {
+func monitorJob(ctx *checkSuiteContext, repoStatus *github.RepoStatus, jobID int32) error {
 	prevStatus := buildssrht.JobStatusPending
 	for {
 		time.Sleep(monitorJobInterval)
@@ -503,9 +503,9 @@ func monitorJob(ctx *checkSuiteContext, repoStatus *github.RepoStatus, job *buil
 			err error
 		)
 		for i := 0; job == nil && i < monitorMaxRetries; i++ {
-			job, err := buildssrht.FetchJob(ctx.srht.GQL, ctx, job.Id)
+			job, err = buildssrht.FetchJob(ctx.srht.GQL, ctx, jobID)
 			if err != nil {
-				log.Printf("failed to fetch sr.ht job #%v (try %v/%v): %v", job.Id, i+1, monitorMaxRetries, err)
+				log.Printf("failed to fetch sr.ht job #%v (try %v/%v): %v", jobID, i+1, monitorMaxRetries, err)
 				job = nil
 				time.Sleep(monitorJobInterval)
 			}
