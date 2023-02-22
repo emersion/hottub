@@ -430,6 +430,17 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 		}
 	}
 
+	envIface, ok := manifest["environment"]
+	if !ok {
+		envIface = make(map[string]interface{})
+		manifest["environment"] = envIface
+	}
+	env, ok := envIface.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid manifest: `environment` is not a map with string keys")
+	}
+	env["BUILD_SUBMITTER"] = "hottub"
+
 	manifestBuf, err := yaml.Marshal(manifest)
 	if err != nil {
 		return fmt.Errorf("failed to marshal manifest: %v", err)
