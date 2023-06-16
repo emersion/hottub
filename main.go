@@ -422,6 +422,11 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 				return fmt.Errorf("invalid manifest: `sources` contains a %T, want a string", srcIface)
 			}
 
+			// A default branch may be specified in the manifest
+			if i := strings.LastIndex(src, "#"); i >= 0 {
+				src = src[:i]
+			}
+
 			// TODO: use Repo.Parent to figure out whether we should replace
 			// the source
 			if strings.HasSuffix(src, "/"+ctx.headRepo.GetName()) || strings.HasSuffix(src, "/"+ctx.headRepo.GetName()+".git") {
