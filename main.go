@@ -265,13 +265,14 @@ func main() {
 			}
 
 			ctx := &checkSuiteContext{
-				Context:    r.Context(),
-				gh:         newInstallationClient(atr, event.Installation),
-				srht:       createSrhtClient(buildssrhtEndpoint, installation),
-				baseRepo:   event.Repo,
-				headRepo:   event.Repo,
-				headCommit: event.CheckSuite.HeadCommit,
-				headSHA:    event.CheckSuite.GetHeadSHA(),
+				Context:        r.Context(),
+				gh:             newInstallationClient(atr, event.Installation),
+				srht:           createSrhtClient(buildssrhtEndpoint, installation),
+				baseRepo:       event.Repo,
+				headRepo:       event.Repo,
+				headCommit:     event.CheckSuite.HeadCommit,
+				headSHA:        event.CheckSuite.GetHeadSHA(),
+				ownerSubmitted: event.Sender.GetLogin() == installation.Owner,
 			}
 			if len(event.CheckSuite.PullRequests) == 1 {
 				ctx.pullRequest = event.CheckSuite.PullRequests[0]
@@ -298,13 +299,14 @@ func main() {
 			}
 
 			ctx := &checkSuiteContext{
-				Context:     r.Context(),
-				gh:          newInstallationClient(atr, event.Installation),
-				srht:        createSrhtClient(buildssrhtEndpoint, installation),
-				baseRepo:    event.Repo,
-				headRepo:    event.PullRequest.Head.Repo,
-				headSHA:     event.PullRequest.Head.GetSHA(),
-				pullRequest: event.PullRequest,
+				Context:        r.Context(),
+				gh:             newInstallationClient(atr, event.Installation),
+				srht:           createSrhtClient(buildssrhtEndpoint, installation),
+				baseRepo:       event.Repo,
+				headRepo:       event.PullRequest.Head.Repo,
+				headSHA:        event.PullRequest.Head.GetSHA(),
+				pullRequest:    event.PullRequest,
+				ownerSubmitted: event.Sender.GetLogin() == installation.Owner,
 			}
 
 			var repoCommit *github.RepositoryCommit
@@ -359,6 +361,7 @@ type checkSuiteContext struct {
 	baseRepo, headRepo *github.Repository
 	headSHA            string
 	headCommit         *github.Commit
+	ownerSubmitted     bool
 
 	pullRequest *github.PullRequest // may be nil
 	headBranch  string              // may be empty
@@ -471,7 +474,7 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 
 [%v]: %v`, title, shortHash, commit.Author.GetName(), shortHash, commitURL)
 
-	job, err := buildssrht.SubmitJob(ctx.srht.GQL, ctx, string(manifestBuf), tags, &note)
+	job, err := buildssrht.SubmitJob(ctx.srht.GQL, ctx, string(manifestBuf), tags, &note, ctx.ownerSubmitted)
 	if err != nil {
 		return fmt.Errorf("failed to submit sr.ht job: %v", err)
 	}
