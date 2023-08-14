@@ -8,6 +8,18 @@ scalar File
 "Used to provide a human-friendly description of an access scope"
 directive @scopehelp(details: String!) on ENUM_VALUE
 
+"""
+This is used to decorate fields which are only accessible with a personal
+access token, and are not available to clients using OAuth 2.0 access tokens.
+"""
+directive @private on FIELD_DEFINITION
+
+"""
+This is used to decorate fields which are for internal use, and are not
+available to normal API users.
+"""
+directive @internal on FIELD_DEFINITION
+
 enum AccessScope {
   PROFILE @scopehelp(details: "profile information")
   JOBS    @scopehelp(details: "build jobs")
@@ -91,6 +103,12 @@ enum JobStatus {
   CANCELLED
 }
 
+enum Visibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
 type Job {
   id: Int!
   created: Time!
@@ -98,7 +116,8 @@ type Job {
   status: JobStatus!
   manifest: String!
   note: String
-  tags: [String]!
+  tags: [String!]!
+  visibility: Visibility!
 
   "Name of the build image"
   image: String!
@@ -111,22 +130,22 @@ type Job {
 
   owner: Entity! @access(scope: PROFILE, kind: RO)
   group: JobGroup
-  tasks: [Task]!
-  artifacts: [Artifact]!
+  tasks: [Task!]!
+  artifacts: [Artifact!]!
 
   "The job's top-level log file, not associated with any tasks"
   log: Log @access(scope: LOGS, kind: RO)
 
   "List of secrets available to this job, or null if they were disabled"
-  secrets: [Secret] @access(scope: SECRETS, kind: RO)
+  secrets: [Secret!] @access(scope: SECRETS, kind: RO)
 }
 
 type Log {
   "The most recently written 128 KiB of the build log."
   last128KiB: String!
   """
-  The URL at which the full build log can be downloaded with a GET request
-  (text/plain).
+  The URL at which the full build log can be downloaded with an authenticated
+  GET request (text/plain).
   """
   fullURL: String!
 }
@@ -159,8 +178,8 @@ type JobGroup {
   created: Time!
   note: String
   owner: Entity! @access(scope: PROFILE, kind: RO)
-  jobs: [Job]!
-  triggers: [Trigger]!
+  jobs: [Job!]!
+  triggers: [Trigger!]!
 }
 
 enum TaskStatus {
@@ -253,6 +272,99 @@ type SecretFile implements Secret {
   data: Binary! @worker
 }
 
+type OAuthClient {
+  uuid: String!
+}
+
+enum WebhookEvent {
+  JOB_CREATED
+}
+
+interface WebhookSubscription {
+  id: Int!
+  events: [WebhookEvent!]!
+  query: String!
+  url: String!
+
+  """
+  If this webhook was registered by an authorized OAuth 2.0 client, this
+  field is non-null.
+  """
+  client: OAuthClient @private
+
+  "All deliveries which have been sent to this webhook."
+  deliveries(cursor: Cursor): WebhookDeliveryCursor!
+
+  "Returns a sample payload for this subscription, for testing purposes"
+  sample(event: WebhookEvent!): String!
+}
+
+type UserWebhookSubscription implements WebhookSubscription {
+  id: Int!
+  events: [WebhookEvent!]!
+  query: String!
+  url: String!
+  client: OAuthClient @private
+  deliveries(cursor: Cursor): WebhookDeliveryCursor!
+  sample(event: WebhookEvent!): String!
+}
+
+type WebhookDelivery {
+  uuid: String!
+  date: Time!
+  event: WebhookEvent!
+  subscription: WebhookSubscription!
+  requestBody: String!
+
+  """
+  These details are provided only after a response is received from the
+  remote server. If a response is sent whose Content-Type is not text/*, or
+  cannot be decoded as UTF-8, the response body will be null. It will be
+  truncated after 64 KiB.
+  """
+  responseBody: String
+  responseHeaders: String
+  responseStatus: Int
+}
+
+interface WebhookPayload {
+  uuid: String!
+  event: WebhookEvent!
+  date: Time!
+}
+
+type JobEvent implements WebhookPayload {
+  uuid: String!
+  event: WebhookEvent!
+  date: Time!
+
+  job: Job!
+}
+
+"""
+A cursor for enumerating a list of webhook deliveries
+
+If there are additional results available, the cursor object may be passed
+back into the same endpoint to retrieve another page. If the cursor is null,
+there are no remaining results to return.
+"""
+type WebhookDeliveryCursor {
+  results: [WebhookDelivery!]!
+  cursor: Cursor
+}
+
+"""
+A cursor for enumerating a list of webhook subscriptions
+
+If there are additional results available, the cursor object may be passed
+back into the same endpoint to retrieve another page. If the cursor is null,
+there are no remaining results to return.
+"""
+type WebhookSubscriptionCursor {
+  results: [WebhookSubscription!]!
+  cursor: Cursor
+}
+
 type Query {
   "Returns API version information."
   version: Version!
@@ -272,6 +384,25 @@ type Query {
 
   "Returns secrets owned by the authenticated user."
   secrets(cursor: Cursor): SecretCursor! @access(scope: SECRETS, kind: RO)
+
+  """
+  Returns a list of user webhook subscriptions. For clients
+  authenticated with a personal access token, this returns all webhooks
+  configured by all GraphQL clients for your account. For clients
+  authenticated with an OAuth 2.0 access token, this returns only webhooks
+  registered for your client.
+  """
+  userWebhooks(cursor: Cursor): WebhookSubscriptionCursor!
+
+  "Returns details of a user webhook subscription by its ID."
+  userWebhook(id: Int!): WebhookSubscription
+
+  """
+  Returns information about the webhook currently being processed. This is
+  not valid during normal queries over HTTP, and will return an error if used
+  outside of a webhook context.
+  """
+  webhook: WebhookPayload!
 }
 
 enum TriggerType {
@@ -296,6 +427,12 @@ input TriggerInput {
   webhook: WebhookTriggerInput
 }
 
+input UserWebhookInput {
+  url: String!
+  events: [WebhookEvent!]!
+  query: String!
+}
+
 type Mutation {
   """
   Submits a new job to the queue.
@@ -307,7 +444,7 @@ type Mutation {
   executed immediately if unspecified.
   """
   submit(manifest: String!, tags: [String!] note: String, secrets: Boolean,
-    execute: Boolean): Job! @access(scope: JOBS, kind: RW)
+    execute: Boolean, visibility: Visibility): Job! @access(scope: JOBS, kind: RW)
 
   "Queues a pending job."
   start(jobID: Int!): Job @access(scope: JOBS, kind: RW)
@@ -341,4 +478,32 @@ type Mutation {
 
   "Uploads a build artifact."
   createArtifact(jobId: Int!, path: String!, contents: File!): Artifact @worker
+
+  """
+  Creates a new user webhook subscription. When an event from the
+  provided list of events occurs, the 'query' parameter (a GraphQL query)
+  will be evaluated and the results will be sent to the provided URL as the
+  body of an HTTP POST request. The list of events must include at least one
+  event, and no duplicates.
+
+  This query is evaluated in the webhook context, such that query { webhook }
+  may be used to access details of the event which trigged the webhook. The
+  query may not make any mutations.
+  """
+  createUserWebhook(config: UserWebhookInput!): WebhookSubscription!
+
+  """
+  Deletes a user webhook. Any events already queued may still be
+  delivered after this request completes. Clients authenticated with a
+  personal access token may delete any webhook registered for their account,
+  but authorized OAuth 2.0 clients may only delete their own webhooks.
+  Manually deleting a webhook configured by a third-party client may cause
+  unexpected behavior with the third-party integration.
+  """
+  deleteUserWebhook(id: Int!): WebhookSubscription!
+
+  """
+  Deletes the authenticated user's account. Internal use only.
+  """
+  deleteUser: Int! @internal
 }
