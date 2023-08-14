@@ -464,6 +464,11 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 		tags = append(tags, name)
 	}
 
+	visibility := buildssrht.VisibilityPublic
+	if *ctx.headRepo.Private {
+		visibility = buildssrht.VisibilityPrivate
+	}
+
 	commit := ctx.headCommit
 	title := strings.SplitN(commit.GetMessage(), "\n", 2)[0]
 	shortHash := ctx.headSHA[0:10]
@@ -474,7 +479,7 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 
 [%v]: %v`, title, shortHash, commit.Author.GetName(), shortHash, commitURL)
 
-	job, err := buildssrht.SubmitJob(ctx.srht.GQL, ctx, string(manifestBuf), tags, &note, ctx.ownerSubmitted)
+	job, err := buildssrht.SubmitJob(ctx.srht.GQL, ctx, string(manifestBuf), tags, &note, ctx.ownerSubmitted, visibility)
 	if err != nil {
 		return fmt.Errorf("failed to submit sr.ht job: %v", err)
 	}
