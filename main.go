@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"git.sr.ht/~emersion/go-oauth2"
 	"git.sr.ht/~emersion/gqlclient"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
@@ -78,10 +79,6 @@ func main() {
 		log.Fatal("missing -gh-app-id or -gh-private-key")
 	}
 
-	if _, err := url.Parse(metasrhtEndpoint); err != nil {
-		log.Fatalf("invalid -metasrht-endpoint: %v", err)
-	}
-
 	atr := createAppsTransport(appID, privateKeyFilename)
 	db := createDB(dbFilename)
 
@@ -89,6 +86,11 @@ func main() {
 	app, _, err := agh.Apps.Get(context.Background(), "")
 	if err != nil {
 		log.Fatalf("failed to fetch app: %v", err)
+	}
+
+	srhtOAuth2Client, err := getSrhtOAuth2Client(metasrhtEndpoint, srhtClientID, srhtClientSecret)
+	if err != nil {
+		log.Fatalf("failed to create sr.ht OAuth2 client: %v", err)
 	}
 
 	tpl := template.Must(template.ParseGlob(TemplatesDir + "/*.html"))
@@ -139,15 +141,17 @@ func main() {
 		}
 
 		ctx := r.Context()
-		endpoint := metasrhtEndpoint + "/oauth2/access-token"
-		token, err := exchangeSrhtOAuth2(ctx, endpoint, code, srhtClientID, srhtClientSecret)
+		tokenResp, err := srhtOAuth2Client.Exchange(ctx, code)
+		if err == nil && tokenResp.TokenType != oauth2.TokenTypeBearer {
+			err = fmt.Errorf("unsupported OAuth2 token type %q", tokenResp.TokenType)
+		}
 		if err != nil {
 			log.Printf("failed to exchange sr.ht code for an OAuth2 token: %v", err)
 			http.Error(w, "failed to perform OAuth2 exchange", http.StatusInternalServerError)
 			return
 		}
 
-		if err := saveSrhtToken(ctx, db, buildssrhtEndpoint, installation, token); err != nil {
+		if err := saveSrhtToken(ctx, db, buildssrhtEndpoint, srhtOAuth2Client, installation, tokenResp); err != nil {
 			log.Print(err)
 			http.Error(w, "invalid sr.ht token", http.StatusInternalServerError)
 			return
@@ -177,7 +181,12 @@ func main() {
 			// installation ID before the user has the chance to submit the
 			// sr.ht token
 
-			if err := saveSrhtToken(r.Context(), db, buildssrhtEndpoint, installation, token); err != nil {
+			// TODO: discover sr.ht token scope somehow
+			tokenResp := &oauth2.TokenResp{
+				AccessToken: token,
+				TokenType:   oauth2.TokenTypeBearer,
+			}
+			if err := saveSrhtToken(r.Context(), db, buildssrhtEndpoint, srhtOAuth2Client, installation, tokenResp); err != nil {
 				log.Print(err)
 				http.Error(w, "invalid sr.ht token", http.StatusBadRequest)
 				return
@@ -187,23 +196,14 @@ func main() {
 		// If we have a sr.ht client setup, redirect to the sr.ht authorization
 		// page
 		if installation != nil && installation.SrhtToken == "" && srhtClientID != "" {
-			u, err := url.Parse(metasrhtEndpoint)
-			if err != nil {
-				panic(err) // we sanity check the URL at initialization time
-			}
-			u.Path = "/oauth2/authorize"
-
 			state := make(url.Values)
 			state.Set("installation_id", strconv.FormatInt(id, 10))
 
-			q := u.Query()
-			q.Set("response_type", "code")
-			q.Set("client_id", srhtClientID)
-			q.Set("scope", srhtGrants)
-			q.Set("state", state.Encode())
-			u.RawQuery = q.Encode()
-
-			http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
+			redirectURL := srhtOAuth2Client.AuthorizationCodeURL(&oauth2.AuthorizationOptions{
+				State: state.Encode(),
+				Scope: strings.Split(srhtGrants, " "),
+			})
+			http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 			return
 		}
 
@@ -269,7 +269,7 @@ func main() {
 			ctx := &checkSuiteContext{
 				Context:        r.Context(),
 				gh:             newInstallationClient(atr, event.Installation),
-				srht:           createSrhtClient(buildssrhtEndpoint, installation),
+				srht:           createSrhtClient(buildssrhtEndpoint, srhtOAuth2Client, installation),
 				baseRepo:       event.Repo,
 				headRepo:       event.Repo,
 				headCommit:     event.CheckSuite.HeadCommit,
@@ -305,7 +305,7 @@ func main() {
 			ctx := &checkSuiteContext{
 				Context:        r.Context(),
 				gh:             newInstallationClient(atr, event.Installation),
-				srht:           createSrhtClient(buildssrhtEndpoint, installation),
+				srht:           createSrhtClient(buildssrhtEndpoint, srhtOAuth2Client, installation),
 				baseRepo:       event.Repo,
 				headRepo:       event.PullRequest.Head.Repo,
 				headSHA:        event.PullRequest.Head.GetSHA(),
