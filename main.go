@@ -280,6 +280,8 @@ func main() {
 				ctx.headBranch = *event.CheckSuite.HeadBranch
 			}
 			err = startCheckSuite(ctx)
+		case *github.CheckRunEvent:
+			// ignore
 		case *github.PullRequestEvent:
 			// GitHub doesn't automatically create a CheckSuiteEvent for pull
 			// requests made from a fork, so we need to manually handle this
