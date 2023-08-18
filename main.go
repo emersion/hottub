@@ -354,6 +354,11 @@ func main() {
 	}
 }
 
+// userError is a configuration error on the user's end.
+type userError struct {
+	error
+}
+
 type checkSuiteContext struct {
 	context.Context
 	gh                 *github.Client
@@ -367,7 +372,26 @@ type checkSuiteContext struct {
 	headBranch  string              // may be empty
 }
 
-func startCheckSuite(ctx *checkSuiteContext) error {
+func startCheckSuite(ctx *checkSuiteContext) (err error) {
+	defer func() {
+		if err == nil {
+			return
+		}
+
+		msg := "internal error"
+		if userErr, ok := err.(userError); ok {
+			msg = userErr.Error()
+			err = nil
+		}
+
+		statusContext := "builds.sr.ht"
+		repoStatus := &github.RepoStatus{Context: &statusContext}
+		statusErr := updateRepoStatus(ctx, repoStatus, "failure", msg)
+		if statusErr != nil {
+			log.Printf("failed to create commit status: %v", statusErr)
+		}
+	}()
+
 	filenames, err := listManifestCandidates(ctx, ctx.gh, ctx.headRepo.Owner.GetLogin(), ctx.headRepo.GetName(), ctx.headSHA)
 	if err != nil {
 		return err
@@ -408,7 +432,7 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 	if ok {
 		cloneURL, err := url.Parse(ctx.headRepo.GetCloneURL())
 		if err != nil {
-			return fmt.Errorf("failed to parse GitHub clone URL: %v", err)
+			return userError{fmt.Errorf("failed to parse GitHub clone URL: %v", err)}
 		}
 
 		manifestCloneURL := *cloneURL
@@ -416,13 +440,13 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 
 		sources, ok := sourcesIface.([]interface{})
 		if !ok {
-			return fmt.Errorf("invalid manifest: `sources` is not a list")
+			return userError{fmt.Errorf("invalid manifest: `sources` is not a list")}
 		}
 
 		for i, srcIface := range sources {
 			src, ok := srcIface.(string)
 			if !ok {
-				return fmt.Errorf("invalid manifest: `sources` contains a %T, want a string", srcIface)
+				return userError{fmt.Errorf("invalid manifest: `sources` contains a %T, want a string", srcIface)}
 			}
 
 			// A default branch may be specified in the manifest
@@ -445,7 +469,7 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 	}
 	env, ok := envIface.(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("invalid manifest: `environment` is not a map with string keys")
+		return userError{fmt.Errorf("invalid manifest: `environment` is not a map with string keys")}
 	}
 	env["BUILD_SUBMITTER"] = "hottub"
 
@@ -629,7 +653,7 @@ func fetchManifest(ctx context.Context, gh *github.Client, repoOwner, repoName, 
 
 	var manifest map[string]interface{}
 	if err := yaml.Unmarshal([]byte(body), &manifest); err != nil {
-		return nil, fmt.Errorf("failed to parse manifest at %v: %v", filename, err)
+		return nil, userError{fmt.Errorf("failed to parse manifest at %v: %v", filename, err)}
 	}
 
 	return manifest, nil
