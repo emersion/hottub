@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -18,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"git.sr.ht/~emersion/gqlclient"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/google/go-github/v42/github"
@@ -508,7 +510,12 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 	// TODO: use ctx.ownerSubmitted and token scope to enable secrets
 	job, err := buildssrht.SubmitJob(ctx.srht.GQL, ctx, string(manifestBuf), tags, &note, false, visibility)
 	if err != nil {
-		return fmt.Errorf("failed to submit sr.ht job: %v", err)
+		var httpErr *gqlclient.HTTPError
+		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusForbidden {
+			return userError{fmt.Errorf("failed to submit sr.ht job: %v", err)}
+		} else {
+			return fmt.Errorf("failed to submit sr.ht job: %v", err)
+		}
 	}
 
 	detailsURL := fmt.Sprintf("%v/%v/job/%v", ctx.srht.Endpoint, job.Owner.CanonicalName, job.Id)
