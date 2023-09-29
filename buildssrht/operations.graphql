@@ -1,4 +1,4 @@
-mutation submitJob($manifest: String!, $tags: [String!], $note: String, $includeSecrets: Boolean!, $visibility: Visibility!) {
+mutation submitJob($manifest: String!, $tags: [String!], $note: String, $includeSecrets: Boolean, $visibility: Visibility!) {
     submit(manifest: $manifest, secrets: $includeSecrets, tags: $tags, note: $note, visibility: $visibility) {
         id
         owner {

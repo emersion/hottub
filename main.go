@@ -507,8 +507,14 @@ func startJob(ctx *checkSuiteContext, filename string) error {
 
 [%v]: %v`, title, shortHash, commit.Author.GetName(), shortHash, commitURL)
 
-	// TODO: use ctx.ownerSubmitted and token scope to enable secrets
-	job, err := buildssrht.SubmitJob(ctx.srht.GQL, ctx, string(manifestBuf), tags, &note, false, visibility)
+	// Use automatic secrets (nil) if the account owner submitted the job
+	var includeSecrets *bool = nil
+	if !ctx.ownerSubmitted {
+		falseValue := false
+		includeSecrets = &falseValue
+	}
+
+	job, err := buildssrht.SubmitJob(ctx.srht.GQL, ctx, string(manifestBuf), tags, &note, includeSecrets, visibility)
 	if err != nil {
 		var httpErr *gqlclient.HTTPError
 		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusForbidden {

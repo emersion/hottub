@@ -526,8 +526,8 @@ type WebhookTriggerInput struct {
 	Url string `json:"url"`
 }
 
-func SubmitJob(client *gqlclient.Client, ctx context.Context, manifest string, tags []string, note *string, includeSecrets bool, visibility Visibility) (submit *Job, err error) {
-	op := gqlclient.NewOperation("mutation submitJob ($manifest: String!, $tags: [String!], $note: String, $includeSecrets: Boolean!, $visibility: Visibility!) {\n\tsubmit(manifest: $manifest, secrets: $includeSecrets, tags: $tags, note: $note, visibility: $visibility) {\n\t\tid\n\t\towner {\n\t\t\tcanonicalName\n\t\t}\n\t}\n}\n")
+func SubmitJob(client *gqlclient.Client, ctx context.Context, manifest string, tags []string, note *string, includeSecrets *bool, visibility Visibility) (submit *Job, err error) {
+	op := gqlclient.NewOperation("mutation submitJob ($manifest: String!, $tags: [String!], $note: String, $includeSecrets: Boolean, $visibility: Visibility!) {\n\tsubmit(manifest: $manifest, secrets: $includeSecrets, tags: $tags, note: $note, visibility: $visibility) {\n\t\tid\n\t\towner {\n\t\t\tcanonicalName\n\t\t}\n\t}\n}\n")
 	op.Var("manifest", manifest)
 	op.Var("tags", tags)
 	op.Var("note", note)
