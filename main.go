@@ -207,16 +207,25 @@ func main() {
 			return
 		}
 
+		var installSettingsURL string
+		if installation != nil {
+			if installation.Org != "" {
+				installSettingsURL = fmt.Sprintf("https://github.com/organizations/%v/settings/installations/%v", installation.Org, id)
+			} else {
+				installSettingsURL = fmt.Sprintf("https://github.com/settings/installations/%v", id)
+			}
+		}
+
 		data := struct {
-			Pending        bool
-			Done           bool
-			SrhtGrants     string
-			InstallationID int64
+			Pending            bool
+			Done               bool
+			SrhtGrants         string
+			InstallSettingsURL string
 		}{
-			Pending:        installation == nil,
-			Done:           installation != nil && installation.SrhtToken != "",
-			SrhtGrants:     srhtGrants,
-			InstallationID: id,
+			Pending:            installation == nil,
+			Done:               installation != nil && installation.SrhtToken != "",
+			SrhtGrants:         srhtGrants,
+			InstallSettingsURL: installSettingsURL,
 		}
 		if err := tpl.ExecuteTemplate(w, "post-install.html", &data); err != nil {
 			panic(err)
@@ -249,6 +258,7 @@ func main() {
 					ID:        *event.Installation.ID,
 					CreatedAt: time.Now(),
 					Owner:     event.Sender.GetLogin(),
+					Org:       event.GetOrg().GetLogin(),
 				})
 			case "deleted":
 				err = db.DeleteInstallation(*event.Installation.ID)

@@ -10,7 +10,7 @@
 {{ else if .Done }}
 	<p>Installation complete!</p>
 	<p>
-		To manage the installation, <a href="https://github.com/settings/installations/{{ .InstallationID }}">head over to GitHub settings</a>.
+		To manage the installation, <a href="{{ .InstallSettingsURL }}">head over to GitHub settings</a>.
 	</p>
 {{ else }}
 	<p>
