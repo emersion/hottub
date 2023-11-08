@@ -616,6 +616,10 @@ func jobStatusToGitHub(jobStatus buildssrht.JobStatus) (state, description strin
 }
 
 func updateRepoStatus(ctx *checkSuiteContext, repoStatus *github.RepoStatus, state, description string) error {
+	// GitHub rejects updates when description exceeds 140 characters
+	if len(description) > 140 {
+		description = description[:140]
+	}
 	repoStatus = &github.RepoStatus{
 		TargetURL:   repoStatus.TargetURL,
 		Context:     repoStatus.Context,
