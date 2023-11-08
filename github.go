@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"github.com/google/go-github/v42/github"
+	"github.com/google/go-github/v56/github"
 )
 
 func createAppsTransport(appIDStr, privateKeyFilename string) *ghinstallation.AppsTransport {

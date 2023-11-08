@@ -23,7 +23,7 @@ import (
 	"git.sr.ht/~emersion/gqlclient"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
-	"github.com/google/go-github/v42/github"
+	"github.com/google/go-github/v56/github"
 	"gopkg.in/yaml.v3"
 
 	"git.sr.ht/~emersion/hottub/buildssrht"
