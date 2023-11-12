@@ -21,8 +21,8 @@ import (
 
 	"git.sr.ht/~emersion/go-oauth2"
 	"git.sr.ht/~emersion/gqlclient"
-	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/go-github/v56/github"
 	"gopkg.in/yaml.v3"
 

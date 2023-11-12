@@ -6,7 +6,7 @@ require (
 	git.sr.ht/~emersion/go-oauth2 v0.0.0-20231030101705-a77f9786207d
 	git.sr.ht/~emersion/gqlclient v0.0.0-20230820050442-8873fe0204b9
 	github.com/bradleyfalzon/ghinstallation/v2 v2.8.0
-	github.com/go-chi/chi v1.5.5
+	github.com/go-chi/chi/v5 v5.0.10
 	github.com/google/go-github/v56 v56.0.0
 	github.com/kr/pretty v0.3.0 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
