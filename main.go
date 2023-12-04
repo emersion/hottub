@@ -276,6 +276,10 @@ func main() {
 				break
 			}
 
+			if err := refreshSrhtToken(r.Context(), db, srhtOAuth2Client, installation); err != nil {
+				log.Printf("failed to refresh sr.ht token for installation %v: %v", installation.ID, err)
+			}
+
 			ctx := &checkSuiteContext{
 				Context:        r.Context(),
 				gh:             newInstallationClient(atr, event.Installation),

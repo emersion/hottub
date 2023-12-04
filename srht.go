@@ -42,9 +42,7 @@ func createSrhtClient(endpoint string, oauth2Client *oauth2.Client, installation
 }
 
 func saveSrhtToken(ctx context.Context, db *DB, srhtEndpoint string, oauth2Client *oauth2.Client, installation *Installation, tokenResp *oauth2.TokenResp) error {
-	installation.SrhtToken = tokenResp.AccessToken
-	installation.SrhtRefreshToken = tokenResp.RefreshToken
-	installation.SrhtTokenExpiresAt = time.Now().Add(tokenResp.ExpiresIn)
+	populateSrhtInstallation(installation, tokenResp)
 	srht := createSrhtClient(srhtEndpoint, oauth2Client, installation)
 	user, err := buildssrht.FetchUser(srht.GQL, ctx)
 	if err != nil {
@@ -57,4 +55,32 @@ func saveSrhtToken(ctx context.Context, db *DB, srhtEndpoint string, oauth2Clien
 
 	log.Printf("user %v has completed installation %v", user.CanonicalName, installation.ID)
 	return nil
+}
+
+func refreshSrhtToken(ctx context.Context, db *DB, oauth2Client *oauth2.Client, installation *Installation) error {
+	if installation.SrhtRefreshToken == "" || installation.SrhtTokenExpiresAt.IsZero() {
+		return nil
+	}
+	if time.Until(installation.SrhtTokenExpiresAt) > 15*24*time.Hour {
+		return nil
+	}
+
+	tokenResp, err := oauth2Client.Refresh(ctx, installation.SrhtRefreshToken, nil)
+	if err != nil {
+		return err
+	}
+
+	populateSrhtInstallation(installation, tokenResp)
+	if err := db.StoreInstallation(installation); err != nil {
+		return fmt.Errorf("failed to store installation: %v", err)
+	}
+
+	log.Printf("refreshed sr.ht token for installation %v", installation.ID)
+	return nil
+}
+
+func populateSrhtInstallation(installation *Installation, tokenResp *oauth2.TokenResp) {
+	installation.SrhtToken = tokenResp.AccessToken
+	installation.SrhtRefreshToken = tokenResp.RefreshToken
+	installation.SrhtTokenExpiresAt = time.Now().Add(tokenResp.ExpiresIn)
 }
