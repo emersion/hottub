@@ -3,7 +3,7 @@ module git.sr.ht/~emersion/hottub
 go 1.16
 
 require (
-	git.sr.ht/~emersion/go-oauth2 v0.0.0-20231030101705-a77f9786207d
+	git.sr.ht/~emersion/go-oauth2 v0.0.0-20231107122354-9bc3ac409ebf
 	git.sr.ht/~emersion/gqlclient v0.0.0-20230820050442-8873fe0204b9
 	github.com/bradleyfalzon/ghinstallation/v2 v2.8.0
 	github.com/go-chi/chi/v5 v5.0.10
@@ -12,7 +12,7 @@ require (
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.10 // indirect
 	go.etcd.io/bbolt v1.3.8
-	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/sys v0.15.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
