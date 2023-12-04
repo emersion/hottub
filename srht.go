@@ -42,6 +42,7 @@ func createSrhtClient(endpoint string, oauth2Client *oauth2.Client, installation
 
 func saveSrhtToken(ctx context.Context, db *DB, srhtEndpoint string, oauth2Client *oauth2.Client, installation *Installation, tokenResp *oauth2.TokenResp) error {
 	installation.SrhtToken = tokenResp.AccessToken
+	installation.SrhtRefreshToken = tokenResp.RefreshToken
 	srht := createSrhtClient(srhtEndpoint, oauth2Client, installation)
 	user, err := buildssrht.FetchUser(srht.GQL, ctx)
 	if err != nil {
