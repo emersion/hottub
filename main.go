@@ -402,9 +402,16 @@ func startCheckSuite(ctx *checkSuiteContext) (err error) {
 			err = nil
 		}
 
+		// Shallow copy check suite context to assign a different deadline
+		failCtx := *ctx
+
+		failBareCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		failCtx.Context = failBareCtx
+
 		statusContext := "builds.sr.ht"
 		repoStatus := &github.RepoStatus{Context: &statusContext}
-		statusErr := updateRepoStatus(ctx, repoStatus, "failure", msg)
+		statusErr := updateRepoStatus(&failCtx, repoStatus, "failure", msg)
 		if statusErr != nil {
 			log.Printf("failed to create commit status: %v", statusErr)
 		}
