@@ -33,6 +33,7 @@ const (
 	monitorJobInterval   = 5 * time.Second
 	monitorMaxRetries    = 10
 	srhtGrants           = "builds.sr.ht/PROFILE:RO builds.sr.ht/JOBS:RW"
+	srhtGrantsSecrets    = "builds.sr.ht/SECRETS:RO"
 	maxJobsPerCheckSuite = 4
 )
 
@@ -193,6 +194,13 @@ func main() {
 			}
 		}
 
+		var scopes string
+		if r.URL.Query().Get("state") == "enable_secrets" {
+			scopes = srhtGrants + " " + srhtGrantsSecrets
+		} else {
+			scopes = srhtGrants
+		}
+
 		// If we have a sr.ht client setup, redirect to the sr.ht authorization
 		// page
 		if installation != nil && installation.SrhtToken == "" && srhtClientID != "" {
@@ -201,7 +209,7 @@ func main() {
 
 			redirectURL := srhtOAuth2Client.AuthorizationCodeURL(&oauth2.AuthorizationOptions{
 				State: state.Encode(),
-				Scope: strings.Split(srhtGrants, " "),
+				Scope: strings.Split(scopes, " "),
 			})
 			http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 			return
@@ -224,7 +232,7 @@ func main() {
 		}{
 			Pending:            installation == nil,
 			Done:               installation != nil && installation.SrhtToken != "",
-			SrhtGrants:         srhtGrants,
+			SrhtGrants:         scopes,
 			InstallSettingsURL: installSettingsURL,
 		}
 		if err := tpl.ExecuteTemplate(w, "post-install.html", &data); err != nil {

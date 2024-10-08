@@ -6,9 +6,15 @@
 
 <p>hottub is a bridge to submit builds.sr.ht jobs from GitHub.</p>
 
-<p class="install">
-	<a href="{{ .App.HTMLURL }}/installations/new" class="install-btn">Install</a>
-</p>
+<div class="install">
+	<form action="{{ .App.HTMLURL }}/installations/new">
+		<button class="install-btn" type="submit">Install</button>
+		<p>
+			<input id="enable-secrets" type="checkbox" name="state" value="enable_secrets">
+			<label for="enable-secrets"><small>Use build secrets</small></label>
+		</p>
+	</form>
+</div>
 
 <p><small>
 	<a href="https://git.sr.ht/~emersion/hottub">Source code</a>

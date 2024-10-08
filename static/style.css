@@ -11,11 +11,16 @@ main {
 	text-align: center;
 	margin: 75px 0;
 }
-.install a {
-	display: inline-block;
+.install p {
+	text-align: center;
+}
+.install-btn {
+	display: block;
 	text-decoration: none;
 	color: white;
 	background-color: #0070ff;
 	padding: 15px;
 	border-radius: 5px;
+	border: none;
+	margin-inline: auto;
 }
