@@ -254,11 +254,16 @@ func main() {
 			log.Printf("installation %v by %v", event.GetAction(), event.Sender.GetLogin())
 			switch event.GetAction() {
 			case "created":
+				owner := event.Sender.GetLogin()
+				org := event.Installation.GetAccount().GetLogin()
+				if org == owner {
+					org = ""
+				}
 				err = db.StoreInstallation(&Installation{
 					ID:        *event.Installation.ID,
 					CreatedAt: time.Now(),
-					Owner:     event.Sender.GetLogin(),
-					Org:       event.GetOrg().GetLogin(),
+					Owner:     owner,
+					Org:       org,
 				})
 			case "deleted":
 				err = db.DeleteInstallation(*event.Installation.ID)
