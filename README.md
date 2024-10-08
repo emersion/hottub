@@ -10,18 +10,32 @@ A [public instance] is available.
 
 ## Installation
 
-1. Follow the [GitHub guide] to register an app suitable for the Checks API.
-2. Set the GitHub app setup URL to `https://<domain>/post-install` and the
-   webhook URL to `https://<domain>/webhook`.
-3. Grab the GitHub app ID and webhook secret (optional for local development).
+1. Follow the [GitHub guide] to register an app suitable for the Checks API:
+   - Open the [Register a new app](https://github.com/settings/apps/new) page
+   - Set a name and homepage URL
+   - Leave the callback URL empty
+   - Set the setup URL to `https://<domain>/post-install`
+   - Set the webhook URL to `https://<domain>/webhook`
+   - In *Repository permissions*, select:
+     - Checks: Read and write
+     - Commit statuses: Read and write
+     - Contents: Read-only
+     - Metadata: Read-only
+     - Pull requests: Read-only
+   - In *Subscribe to events*, check:
+     - Check run
+     - Check suite
+     - Pull request
+2. Grab the GitHub app ID and webhook secret (optional for local development).
    Download a new PEM private key.
-4. Start hottub:
+3. Start hottub:
 
        hottub -gh-app-id <id> -gh-private-key <path> -gh-webhook-secret <secret>
 
 Optionally, to improve the authorization flow, you can [register an sr.ht
-OAuth2 client] and pass its credentials with `-srht-client-id` and
-`-srht-client-secret`.
+OAuth2 client] (setting the Redirection URI to
+`https://<domain>/authorize-srht`) and pass its credentials with
+`-metasrht-client-id` and `-metasrht-client-secret`.
 
 ## License
 
