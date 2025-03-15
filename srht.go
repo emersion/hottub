@@ -9,7 +9,7 @@ import (
 	"git.sr.ht/~emersion/go-oauth2"
 	"git.sr.ht/~emersion/gqlclient"
 
-	"git.sr.ht/~emersion/hottub/buildssrht"
+	"github.com/emersion/hottub/buildssrht"
 )
 
 func getSrhtOAuth2Client(metasrhtEndpoint, clientID, clientSecret string) (*oauth2.Client, error) {

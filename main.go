@@ -26,7 +26,7 @@ import (
 	"github.com/google/go-github/v56/github"
 	"gopkg.in/yaml.v3"
 
-	"git.sr.ht/~emersion/hottub/buildssrht"
+	"github.com/emersion/hottub/buildssrht"
 )
 
 const (

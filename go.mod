@@ -1,4 +1,4 @@
-module git.sr.ht/~emersion/hottub
+module github.com/emersion/hottub
 
 go 1.19
 
