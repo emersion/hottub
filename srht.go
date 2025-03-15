@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"git.sr.ht/~emersion/go-oauth2"
 	"git.sr.ht/~emersion/gqlclient"
+	"github.com/emersion/go-oauth2"
 
 	"github.com/emersion/hottub/buildssrht"
 )

@@ -19,8 +19,8 @@ import (
 	"syscall"
 	"time"
 
-	"git.sr.ht/~emersion/go-oauth2"
 	"git.sr.ht/~emersion/gqlclient"
+	"github.com/emersion/go-oauth2"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/go-github/v56/github"
