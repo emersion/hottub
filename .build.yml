@@ -1,0 +1,15 @@
+image: alpine/latest
+packages:
+  - go
+sources:
+  - https://github.com/emersion/hottub.git
+tasks:
+  - build: |
+      cd hottub
+      go build -race -v ./...
+  - test: |
+      cd hottub
+      go test -race ./...
+  - gofmt: |
+      cd hottub
+      test -z $(gofmt -l .)
