@@ -8,6 +8,8 @@ import (
 	"html/template"
 	"log"
 	"math/rand"
+	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -97,6 +99,7 @@ func main() {
 	tpl := template.Must(template.ParseGlob(TemplatesDir + "/*.html"))
 
 	r := chi.NewRouter()
+	r.Use(forwardedHeaderMiddleware)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
@@ -710,4 +713,25 @@ func fetchManifest(ctx context.Context, gh *github.Client, repoOwner, repoName, 
 	}
 
 	return manifest, nil
+}
+
+func forwardedHeaderMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		ip := net.ParseIP(host)
+		if ip.IsLoopback() {
+			var addr string // note, port may be missing
+			if v := r.Header.Get("Forwarded"); v != "" {
+				_, params, _ := mime.ParseMediaType("hack; " + v)
+				addr = params["for"]
+			} else {
+				addr = r.Header.Get("X-Forwarded-For")
+			}
+			if addr != "" {
+				r.RemoteAddr = addr
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
